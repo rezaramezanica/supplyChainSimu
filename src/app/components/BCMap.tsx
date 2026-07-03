@@ -7,13 +7,23 @@ import {
   Line,
   ZoomableGroup,
 } from "react-simple-maps";
-import { Package, MapPin, X, TrendingUp, AlertCircle, CheckCircle, Warehouse, Plus, Minus, RotateCcw, Play, Pause } from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+  CartesianGrid,
+} from "recharts";
+import {
+  Package, MapPin, X, TrendingUp, AlertCircle, CheckCircle,
+  Warehouse, Plus, Minus, RotateCcw, Play, Pause,
+} from "lucide-react";
 
-// Canada provinces GeoJSON — provinces filterable by name
 const CANADA_GEO =
   "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
-
-// US states for southern context
 const US_GEO =
   "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 
@@ -50,6 +60,13 @@ type LocationData = {
   totalValue: string;
   stock: StockMetrics;
   cardSide: "left" | "right";
+};
+
+type SimStats = {
+  demands: number[];
+  stockouts: number;
+  demandLost: number;
+  totalDemand: number;
 };
 
 const initialLocations: LocationData[] = [
@@ -128,7 +145,6 @@ function counts(loc: LocationData) {
   };
 }
 
-// Store original max quantities per item for simulation scaling
 const itemMaxQty: Record<string, number> = {};
 initialLocations.forEach((loc) => {
   loc.inventory.forEach((item) => {
@@ -140,6 +156,239 @@ function nowStr() {
   return new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
 }
 
+function emptyStats(): SimStats {
+  return { demands: [], stockouts: 0, demandLost: 0, totalDemand: 0 };
+}
+
+function normalPDF(x: number, mean: number, std: number) {
+  return (1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * ((x - mean) / std) ** 2);
+}
+
+function buildCurveData(demands: number[]) {
+  if (demands.length < 2) return { mean: 0, std: 0, points: [] };
+  const mean = demands.reduce((a, b) => a + b, 0) / demands.length;
+  const variance = demands.reduce((a, b) => a + (b - mean) ** 2, 0) / demands.length;
+  const std = Math.sqrt(variance) || 1;
+  const lo = mean - 3.5 * std;
+  const hi = mean + 3.5 * std;
+  const steps = 80;
+  const points = Array.from({ length: steps + 1 }, (_, i) => {
+    const x = lo + (i / steps) * (hi - lo);
+    return { demand: Math.round(x), probability: parseFloat(normalPDF(x, mean, std).toFixed(6)) };
+  });
+  return { mean, std, points };
+}
+
+// ─── Results Modal ───────────────────────────────────────────────────────────
+
+function ResultsModal({
+  locations,
+  results,
+  onClose,
+}: {
+  locations: LocationData[];
+  results: Record<string, SimStats>;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Simulation Results</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Inventory demand analysis · BC Warehouse Network</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+          >
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-8">
+          {locations.map((loc) => {
+            const stats = results[loc.id] ?? emptyStats();
+            const { mean, std, points } = buildCurveData(stats.demands);
+            const serviceLevel =
+              stats.totalDemand > 0
+                ? (((stats.totalDemand - stats.demandLost) / stats.totalDemand) * 100).toFixed(1)
+                : "100.0";
+            const ticks = stats.demands.length;
+
+            return (
+              <div key={loc.id}>
+                {/* Location header */}
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: loc.color }} />
+                  <h3 className="text-base font-bold text-slate-800">{loc.name} Warehouse</h3>
+                  <span className="text-xs text-slate-400 ml-1">· {ticks} simulation ticks</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  {/* ── Demand distribution chart ── */}
+                  <div>
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-1">
+                      Demand Distribution
+                    </p>
+                    <p className="text-xs text-slate-500 mb-3">
+                      μ = <span className="font-semibold text-slate-700">{mean.toFixed(1)}</span> units &nbsp;·&nbsp;
+                      σ = <span className="font-semibold text-slate-700">{std.toFixed(1)}</span> units
+                    </p>
+                    {points.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={180}>
+                        <AreaChart data={points} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id={`grad-${loc.id}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={loc.color} stopOpacity={0.25} />
+                              <stop offset="95%" stopColor={loc.color} stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                          <XAxis
+                            dataKey="demand"
+                            tick={{ fontSize: 9, fill: "#94a3b8" }}
+                            tickLine={false}
+                            axisLine={false}
+                            interval={15}
+                          />
+                          <YAxis hide />
+                          <Tooltip
+                            formatter={(v: number) => [v.toFixed(4), "Probability"]}
+                            labelFormatter={(l) => `Demand: ${l} units`}
+                            contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                          />
+                          <ReferenceLine
+                            x={Math.round(mean)}
+                            stroke={loc.color}
+                            strokeWidth={1.5}
+                            strokeDasharray="4 3"
+                            label={{ value: "μ", position: "top", fill: loc.color, fontSize: 10, fontWeight: 700 }}
+                          />
+                          <ReferenceLine
+                            x={Math.round(mean - std)}
+                            stroke="#94a3b8"
+                            strokeWidth={1}
+                            strokeDasharray="3 3"
+                            label={{ value: "−σ", position: "top", fill: "#94a3b8", fontSize: 9 }}
+                          />
+                          <ReferenceLine
+                            x={Math.round(mean + std)}
+                            stroke="#94a3b8"
+                            strokeWidth={1}
+                            strokeDasharray="3 3"
+                            label={{ value: "+σ", position: "top", fill: "#94a3b8", fontSize: 9 }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="probability"
+                            stroke={loc.color}
+                            strokeWidth={2}
+                            fill={`url(#grad-${loc.id})`}
+                            dot={false}
+                            activeDot={{ r: 3, fill: loc.color }}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-[180px] flex items-center justify-center text-xs text-slate-400">
+                        No data recorded
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── KPI cards ── */}
+                  <div className="flex flex-col justify-center gap-3">
+                    {/* Service Level — big feature */}
+                    <div
+                      className="rounded-xl px-4 py-3 border"
+                      style={{ backgroundColor: loc.accent, borderColor: loc.lightColor }}
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: loc.color }}>
+                        Service Level
+                      </p>
+                      <p className="text-3xl font-black mt-0.5" style={{ color: loc.color }}>
+                        {serviceLevel}%
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        of total demand fulfilled
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <StatCard
+                        label="Mean Demand / Tick"
+                        value={`${mean.toFixed(1)} units`}
+                        sub="average per period"
+                      />
+                      <StatCard
+                        label="Std Deviation"
+                        value={`${std.toFixed(1)} units`}
+                        sub="demand variability"
+                      />
+                      <StatCard
+                        label="Stockouts"
+                        value={stats.stockouts.toString()}
+                        sub="periods with zero stock"
+                        alert={stats.stockouts > 0}
+                      />
+                      <StatCard
+                        label="Total Demand Lost"
+                        value={`${stats.demandLost.toLocaleString()} units`}
+                        sub="unmet demand"
+                        alert={stats.demandLost > 0}
+                      />
+                    </div>
+
+                    <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-500">
+                      <span className="font-medium text-slate-700">Total demand simulated: </span>
+                      {stats.totalDemand.toLocaleString()} units over {ticks} periods
+                    </div>
+                  </div>
+                </div>
+
+                {/* Divider between locations */}
+                {loc.id !== locations[locations.length - 1].id && (
+                  <div className="mt-6 border-t border-slate-100" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-slate-100 flex justify-end shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  label, value, sub, alert = false,
+}: { label: string; value: string; sub: string; alert?: boolean }) {
+  return (
+    <div className={`rounded-lg px-3 py-2.5 border ${alert ? "bg-red-50 border-red-100" : "bg-slate-50 border-slate-100"}`}>
+      <p className={`text-[10px] font-semibold uppercase tracking-wider ${alert ? "text-red-400" : "text-slate-400"}`}>
+        {label}
+      </p>
+      <p className={`text-sm font-bold mt-0.5 ${alert ? "text-red-600" : "text-slate-800"}`}>{value}</p>
+      <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 export function BCMap() {
   const [locations, setLocations] = useState<LocationData[]>(initialLocations);
   const [selected, setSelected] = useState<LocationData | null>(null);
@@ -147,9 +396,14 @@ export function BCMap() {
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState<[number, number]>([-119.8, 50.35]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [resultsData, setResultsData] = useState<Record<string, SimStats>>({});
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const statsRef = useRef<Record<string, SimStats>>({});
+  const surgeRef = useRef<{ locId: string | null; ticksLeft: number }>({ locId: null, ticksLeft: 0 });
+  const [surgeLocId, setSurgeLocId] = useState<string | null>(null);
 
-  // Keep selected in sync with locations state so the detail panel updates live
+  // Keep selected panel in sync with live locations
   useEffect(() => {
     if (selected) {
       const updated = locations.find((l) => l.id === selected.id);
@@ -160,23 +414,68 @@ export function BCMap() {
   useEffect(() => {
     if (isPlaying) {
       intervalRef.current = setInterval(() => {
+        // ── Surge scheduling ──
+        // One location surges at a time (high demand → likely stockout).
+        // The other gets low demand so it stays healthy.
+        if (surgeRef.current.ticksLeft <= 0) {
+          const ids = initialLocations.map((l) => l.id);
+          const rand = Math.random();
+          if (rand < 0.42) {
+            surgeRef.current.locId = ids[0];
+            surgeRef.current.ticksLeft = 8 + Math.floor(Math.random() * 7); // 8–14 ticks
+          } else if (rand < 0.84) {
+            surgeRef.current.locId = ids[1];
+            surgeRef.current.ticksLeft = 8 + Math.floor(Math.random() * 7);
+          } else {
+            // Calm period: neither surges
+            surgeRef.current.locId = null;
+            surgeRef.current.ticksLeft = 4 + Math.floor(Math.random() * 5); // 4–8 ticks
+          }
+          setSurgeLocId(surgeRef.current.locId);
+        }
+        surgeRef.current.ticksLeft -= 1;
+
+        const currentSurgeId = surgeRef.current.locId;
+
         setLocations((prev) =>
           prev.map((loc) => {
-            // Drain stock by a random amount each tick
-            let newCurrent = loc.stock.current - Math.floor(Math.random() * 220 + 80);
+            const isSurge = loc.id === currentSurgeId;
 
-            // Restock when hitting near-zero
-            if (newCurrent < loc.stock.safetyStock * 0.4) {
-              newCurrent = loc.stock.capacity * (0.7 + Math.random() * 0.2);
+            // Restock BEFORE demand: a replenishment order arrives at start of tick
+            // Only when not surging and stock is critically low (below safety stock × 0.4)
+            let current = loc.stock.current;
+            if (!isSurge && current < loc.stock.safetyStock * 0.4) {
+              // Restock to ~72% of capacity — intentionally modest so next surge can still cause stockout
+              current = Math.round(loc.stock.capacity * (0.70 + Math.random() * 0.04));
             }
 
-            newCurrent = Math.round(Math.max(0, Math.min(newCurrent, loc.stock.capacity)));
+            // Surge location: ~2.5–3× normal demand → drains stock over 8–14 ticks → stockout
+            // Other location: baseline demand → stays comfortably above reorder point
+            const demand = isSurge
+              ? Math.floor(Math.random() * 100 + 260)  // U(260, 360), mean ≈ 310
+              : Math.floor(Math.random() * 50 + 80);   // U(80, 130),  mean ≈ 105
 
-            // Update inventory items proportionally to overall stock level
+            // Record stats
+            if (!statsRef.current[loc.id]) statsRef.current[loc.id] = emptyStats();
+            const st = statsRef.current[loc.id];
+            st.demands.push(demand);
+            st.totalDemand += demand;
+
+            let newCurrent = current - demand;
+
+            // Stockout: demand exceeds available stock
+            if (newCurrent < 0) {
+              st.demandLost += Math.abs(newCurrent);
+              st.stockouts += 1;
+              newCurrent = 0;
+            }
+
+            newCurrent = Math.round(Math.min(newCurrent, loc.stock.capacity));
+
+            // Update inventory items proportionally
             const stockPct = newCurrent / loc.stock.capacity;
             const newInventory = loc.inventory.map((item) => {
               const maxQ = itemMaxQty[item.sku] ?? item.quantity;
-              // Each item fluctuates independently with some noise
               const noise = 0.85 + Math.random() * 0.3;
               const newQty = Math.max(0, Math.round(maxQ * stockPct * noise));
               return {
@@ -201,6 +500,25 @@ export function BCMap() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [isPlaying]);
+
+  const handlePlayPause = () => {
+    if (isPlaying) {
+      // Stopping — capture results and show modal
+      const captured = { ...statsRef.current };
+      const hasData = Object.values(captured).some((s) => s.demands.length > 0);
+      if (hasData) {
+        setResultsData(captured);
+        setShowResults(true);
+      }
+    } else {
+      // Starting — reset stats and locations
+      statsRef.current = {};
+      surgeRef.current = { locId: null, ticksLeft: 0 };
+      setSurgeLocId(null);
+      setLocations(initialLocations);
+    }
+    setIsPlaying((p) => !p);
+  };
 
   const toggle = (loc: LocationData) =>
     setSelected((prev) => (prev?.id === loc.id ? null : loc));
@@ -250,27 +568,21 @@ export function BCMap() {
             );
           })}
 
-          {/* Play / Pause button */}
+          {/* Play / Pause */}
           <button
-            onClick={() => setIsPlaying((p) => !p)}
+            onClick={handlePlayPause}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ml-2"
             style={{
               borderColor: isPlaying ? "#dc2626" : "#2563eb",
               backgroundColor: isPlaying ? "#fee2e2" : "#dbeafe",
               color: isPlaying ? "#dc2626" : "#2563eb",
             }}
-            title={isPlaying ? "Pause simulation" : "Play simulation"}
+            title={isPlaying ? "Pause & view results" : "Start simulation"}
           >
             {isPlaying ? (
-              <>
-                <Pause className="w-3.5 h-3.5" />
-                Pause
-              </>
+              <><Pause className="w-3.5 h-3.5" />Pause</>
             ) : (
-              <>
-                <Play className="w-3.5 h-3.5" />
-                Play
-              </>
+              <><Play className="w-3.5 h-3.5" />Play</>
             )}
           </button>
         </div>
@@ -286,241 +598,144 @@ export function BCMap() {
           <ZoomableGroup
             zoom={zoom}
             center={center}
-            onMoveEnd={({ zoom: z, coordinates }) => {
-              setZoom(z);
-              setCenter(coordinates);
-            }}
+            onMoveEnd={({ zoom: z, coordinates }) => { setZoom(z); setCenter(coordinates); }}
           >
-          {/* US states — southern context, muted */}
-          <Geographies geography={US_GEO}>
-            {({ geographies }) =>
-              geographies.map((geo) => (
-                <Geography
-                  key={geo.rsmKey}
-                  geography={geo}
-                  fill="#dde3ea"
-                  stroke="#c8d0da"
-                  strokeWidth={0.6}
-                  style={{ default: { outline: "none" }, hover: { outline: "none" }, pressed: { outline: "none" } }}
-                />
-              ))
-            }
-          </Geographies>
+            <Geographies geography={US_GEO}>
+              {({ geographies }) =>
+                geographies.map((geo) => (
+                  <Geography key={geo.rsmKey} geography={geo} fill="#dde3ea" stroke="#c8d0da" strokeWidth={0.6}
+                    style={{ default: { outline: "none" }, hover: { outline: "none" }, pressed: { outline: "none" } }} />
+                ))
+              }
+            </Geographies>
 
-          {/* Canadian provinces */}
-          <Geographies geography={CANADA_GEO}>
-            {({ geographies }) =>
-              geographies.map((geo) => {
-                const isBC = geo.properties.name === "British Columbia";
-                return (
-                  <Geography
-                    key={geo.rsmKey}
-                    geography={geo}
-                    fill={isBC ? "#bfdbfe" : "#dde3ea"}
-                    stroke={isBC ? "#60a5fa" : "#c8d0da"}
-                    strokeWidth={isBC ? 1.2 : 0.6}
-                    style={{ default: { outline: "none" }, hover: { outline: "none" }, pressed: { outline: "none" } }}
-                  />
-                );
-              })
-            }
-          </Geographies>
+            <Geographies geography={CANADA_GEO}>
+              {({ geographies }) =>
+                geographies.map((geo) => {
+                  const isBC = geo.properties.name === "British Columbia";
+                  return (
+                    <Geography key={geo.rsmKey} geography={geo}
+                      fill={isBC ? "#bfdbfe" : "#dde3ea"}
+                      stroke={isBC ? "#60a5fa" : "#c8d0da"}
+                      strokeWidth={isBC ? 1.2 : 0.6}
+                      style={{ default: { outline: "none" }, hover: { outline: "none" }, pressed: { outline: "none" } }} />
+                  );
+                })
+              }
+            </Geographies>
 
-          {/* Route line between locations */}
-          <Line
-            from={locations[0].coordinates}
-            to={locations[1].coordinates}
-            stroke="#94a3b8"
-            strokeWidth={1.5}
-            strokeDasharray="5 4"
-            strokeLinecap="round"
-          />
+            <Line from={locations[0].coordinates} to={locations[1].coordinates}
+              stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" />
 
-          {/* Markers */}
-          {locations.map((loc) => {
-            const isSelected = selected?.id === loc.id;
-            const isHovered = hovered === loc.id;
-            const active = isSelected || isHovered;
-            const c = counts(loc);
-            const s = loc.stock;
+            {locations.map((loc) => {
+              const isSelected = selected?.id === loc.id;
+              const isHovered = hovered === loc.id;
+              const active = isSelected || isHovered;
+              const c = counts(loc);
+              const s = loc.stock;
 
-            // Card geometry
-            const W = 168;
-            const H = 118;
-            const barW = 138;
-            const barH = 9;
-            const pinR = active ? 18 : 13;
+              const W = 168, H = 118, barW = 138, barH = 9;
+              const pinR = active ? 18 : 13;
+              const fillPct = s.current / s.capacity;
+              const ropPct = s.reorderPoint / s.capacity;
+              const ssPct = s.safetyStock / s.capacity;
+              const fillColor =
+                s.current <= s.safetyStock ? "#ef4444" :
+                s.current <= s.reorderPoint ? "#f59e0b" : loc.color;
 
-            const fillPct = s.current / s.capacity;
-            const ropPct  = s.reorderPoint / s.capacity;
-            const ssPct   = s.safetyStock / s.capacity;
+              const gap = 14;
+              const cardX = loc.cardSide === "left" ? -(pinR + gap + W) : pinR + gap;
+              const cardY = -H / 2;
+              const connX1 = loc.cardSide === "left" ? -pinR : pinR;
+              const connX2 = loc.cardSide === "left" ? -(pinR + gap) : pinR + gap;
 
-            const fillColor =
-              s.current <= s.safetyStock ? "#ef4444" :
-              s.current <= s.reorderPoint ? "#f59e0b" : loc.color;
-
-            // Position card to left or right of pin
-            const gap = 14;
-            const cardX = loc.cardSide === "left" ? -(pinR + gap + W) : pinR + gap;
-            const cardY = -H / 2;
-            // Connector from pin edge to card
-            const connX1 = loc.cardSide === "left" ? -pinR : pinR;
-            const connX2 = loc.cardSide === "left" ? -(pinR + gap) : pinR + gap;
-
-            return (
-              <Marker
-                key={loc.id}
-                coordinates={loc.coordinates}
-                onClick={() => toggle(loc)}
-                onMouseEnter={() => setHovered(loc.id)}
-                onMouseLeave={() => setHovered(null)}
-                style={{ cursor: "pointer" }}
-              >
-                {/* ── Inventory card ── */}
-                <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
-                  {/* Drop shadow */}
-                  <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
-                  {/* Card background */}
-                  <rect width={W} height={H} rx={7} fill="white" stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.35} />
-                  {/* Left accent stripe */}
-                  <rect width={4} height={H} rx={2} fill={loc.color} />
-
-                  {/* Header label */}
-                  <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">
-                    INVENTORY STATUS
-                  </text>
-
-                  {/* ── Metric rows ── */}
-                  {/* Current Level */}
-                  <text x={14} y={33} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Current Level</text>
-                  <text x={W - 10} y={33} textAnchor="end" fontSize={9} fontWeight="700" fill={fillColor} fontFamily="system-ui, sans-serif">
-                    {s.current.toLocaleString()} {s.unit}
-                  </text>
-
-                  {/* Divider */}
-                  <line x1={14} y1={39} x2={W - 10} y2={39} stroke="#f1f5f9" strokeWidth={1} />
-
-                  {/* Reorder Point */}
-                  <circle cx={14 + 3.5} cy={51} r={3.5} fill="#fef3c7" stroke="#f59e0b" strokeWidth={1} />
-                  <text x={24} y={55} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Reorder Point</text>
-                  <text x={W - 10} y={55} textAnchor="end" fontSize={9} fontWeight="600" fill="#d97706" fontFamily="system-ui, sans-serif">
-                    {s.reorderPoint.toLocaleString()} {s.unit}
-                  </text>
-
-                  {/* Safety Stock */}
-                  <circle cx={14 + 3.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
-                  <text x={24} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
-                  <text x={W - 10} y={73} textAnchor="end" fontSize={9} fontWeight="600" fill="#dc2626" fontFamily="system-ui, sans-serif">
-                    {s.safetyStock.toLocaleString()} {s.unit}
-                  </text>
-
-                  {/* ── Stock bar ── */}
-                  <g transform={`translate(14, 84)`}>
-                    {/* Track */}
-                    <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
-                    {/* Fill */}
-                    <rect width={Math.max(barW * fillPct, barH)} height={barH} rx={4} fill={fillColor} fillOpacity={0.8} />
-
-                    {/* Reorder point marker line */}
-                    <line
-                      x1={barW * ropPct} y1={-3}
-                      x2={barW * ropPct} y2={barH + 3}
-                      stroke="#f59e0b" strokeWidth={2} strokeLinecap="round"
-                    />
-                    {/* Safety stock marker line */}
-                    <line
-                      x1={barW * ssPct} y1={-3}
-                      x2={barW * ssPct} y2={barH + 3}
-                      stroke="#ef4444" strokeWidth={2} strokeLinecap="round"
-                    />
-
-                    {/* Tick labels */}
-                    <text x={barW * ropPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#d97706" fontWeight="600" fontFamily="system-ui, sans-serif">ROP</text>
-                    <text x={barW * ssPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#dc2626" fontWeight="600" fontFamily="system-ui, sans-serif">SS</text>
-                  </g>
-                </g>
-
-                {/* Connector line from pin to card */}
-                <line
-                  x1={connX1} y1={0}
-                  x2={connX2} y2={0}
-                  stroke={loc.color}
-                  strokeWidth={1.5}
-                  strokeOpacity={0.4}
-                  strokeDasharray="3 2"
-                  style={{ pointerEvents: "none" }}
-                />
-
-                {/* ── Pin ── */}
-                {active && (
-                  <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />
-                )}
-                <circle r={pinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
-                <circle r={pinR} fill={isSelected ? loc.color : "white"} stroke={loc.color} strokeWidth={2.5} />
-                <circle r={5} fill={isSelected ? "white" : loc.color} />
-
-                {/* Critical badge */}
-                {c.critical > 0 && (
-                  <g transform={`translate(${active ? 16 : 11}, ${active ? -16 : -11})`}>
-                    <circle r={7} fill="#ef4444" stroke="white" strokeWidth={1.5} />
-                    <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8} fontWeight="800">
-                      {c.critical}
-                    </text>
-                  </g>
-                )}
-
-                {/* City label */}
-                <text
-                  textAnchor="middle"
-                  y={active ? 34 : 28}
-                  fill={loc.color}
-                  fontSize={11}
-                  fontWeight="700"
-                  fontFamily="system-ui, sans-serif"
-                  style={{ pointerEvents: "none", userSelect: "none" }}
+              return (
+                <Marker key={loc.id} coordinates={loc.coordinates}
+                  onClick={() => toggle(loc)}
+                  onMouseEnter={() => setHovered(loc.id)}
+                  onMouseLeave={() => setHovered(null)}
+                  style={{ cursor: "pointer" }}
                 >
-                  {loc.name}
-                </text>
-                {active && (
-                  <text
-                    textAnchor="middle"
-                    y={47}
-                    fill="#64748b"
-                    fontSize={9.5}
-                    fontFamily="system-ui, sans-serif"
-                    style={{ pointerEvents: "none", userSelect: "none" }}
-                  >
-                    {loc.totalSkus} SKUs · {loc.totalValue}
+                  {/* Inventory card */}
+                  <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
+                    <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
+                    <rect width={W} height={H} rx={7} fill="white" stroke={surgeLocId === loc.id ? "#ef4444" : loc.color} strokeWidth={surgeLocId === loc.id ? 2.5 : 1.5} strokeOpacity={surgeLocId === loc.id ? 0.9 : 0.35} />
+                    <rect width={4} height={H} rx={2} fill={surgeLocId === loc.id ? "#ef4444" : loc.color} />
+                    <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">INVENTORY STATUS</text>
+                    {surgeLocId === loc.id && (
+                      <g>
+                        <rect x={W - 54} y={5} width={46} height={14} rx={4} fill="#ef4444" />
+                        <text x={W - 31} y={14.5} textAnchor="middle" fontSize={7.5} fontWeight="800" fill="white" fontFamily="system-ui, sans-serif">⚡ SURGE</text>
+                      </g>
+                    )}
+                    <text x={14} y={33} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Current Level</text>
+                    <text x={W - 10} y={33} textAnchor="end" fontSize={9} fontWeight="700" fill={fillColor} fontFamily="system-ui, sans-serif">
+                      {s.current.toLocaleString()} {s.unit}
+                    </text>
+                    <line x1={14} y1={39} x2={W - 10} y2={39} stroke="#f1f5f9" strokeWidth={1} />
+                    <circle cx={17.5} cy={51} r={3.5} fill="#fef3c7" stroke="#f59e0b" strokeWidth={1} />
+                    <text x={24} y={55} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Reorder Point</text>
+                    <text x={W - 10} y={55} textAnchor="end" fontSize={9} fontWeight="600" fill="#d97706" fontFamily="system-ui, sans-serif">{s.reorderPoint.toLocaleString()} {s.unit}</text>
+                    <circle cx={17.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
+                    <text x={24} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
+                    <text x={W - 10} y={73} textAnchor="end" fontSize={9} fontWeight="600" fill="#dc2626" fontFamily="system-ui, sans-serif">{s.safetyStock.toLocaleString()} {s.unit}</text>
+                    <g transform="translate(14, 84)">
+                      <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
+                      <rect width={Math.max(barW * fillPct, barH)} height={barH} rx={4} fill={fillColor} fillOpacity={0.8} />
+                      <line x1={barW * ropPct} y1={-3} x2={barW * ropPct} y2={barH + 3} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
+                      <line x1={barW * ssPct} y1={-3} x2={barW * ssPct} y2={barH + 3} stroke="#ef4444" strokeWidth={2} strokeLinecap="round" />
+                      <text x={barW * ropPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#d97706" fontWeight="600" fontFamily="system-ui, sans-serif">ROP</text>
+                      <text x={barW * ssPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#dc2626" fontWeight="600" fontFamily="system-ui, sans-serif">SS</text>
+                    </g>
+                  </g>
+
+                  {/* Connector */}
+                  <line x1={connX1} y1={0} x2={connX2} y2={0} stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2" style={{ pointerEvents: "none" }} />
+
+                  {/* Surge ring — visible regardless of hover/select */}
+                  {surgeLocId === loc.id && (
+                    <circle r={38} fill="none" stroke="#ef4444" strokeWidth={2} strokeOpacity={0.5} strokeDasharray="5 3" />
+                  )}
+
+                  {/* Pin */}
+                  {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
+                  <circle r={pinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
+                  <circle r={pinR} fill={isSelected ? loc.color : "white"} stroke={loc.color} strokeWidth={2.5} />
+                  <circle r={5} fill={isSelected ? "white" : loc.color} />
+
+                  {c.critical > 0 && (
+                    <g transform={`translate(${active ? 16 : 11}, ${active ? -16 : -11})`}>
+                      <circle r={7} fill="#ef4444" stroke="white" strokeWidth={1.5} />
+                      <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8} fontWeight="800">{c.critical}</text>
+                    </g>
+                  )}
+
+                  <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700"
+                    fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>
+                    {loc.name}
                   </text>
-                )}
-              </Marker>
-            );
-          })}
+                  {active && (
+                    <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5}
+                      fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>
+                      {loc.totalSkus} SKUs · {loc.totalValue}
+                    </text>
+                  )}
+                </Marker>
+              );
+            })}
           </ZoomableGroup>
         </ComposableMap>
       </div>
 
       {/* ── Zoom controls ────────────────────────────────────────── */}
       <div className="absolute bottom-5 right-5 z-10 flex flex-col gap-1.5">
-        <button
-          onClick={zoomIn}
-          className="w-9 h-9 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-          title="Zoom in"
-        >
+        <button onClick={zoomIn} className="w-9 h-9 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors" title="Zoom in">
           <Plus className="w-4 h-4" />
         </button>
-        <button
-          onClick={zoomOut}
-          className="w-9 h-9 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-          title="Zoom out"
-        >
+        <button onClick={zoomOut} className="w-9 h-9 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-center text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors" title="Zoom out">
           <Minus className="w-4 h-4" />
         </button>
-        <button
-          onClick={resetView}
-          className="w-9 h-9 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-center text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
-          title="Reset view"
-        >
+        <button onClick={resetView} className="w-9 h-9 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-center text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors" title="Reset view">
           <RotateCcw className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -569,11 +784,7 @@ export function BCMap() {
 
       {/* ── Detail panel ────────────────────────────────────────── */}
       {selected && (
-        <div
-          key={selected.id}
-          className="absolute top-[68px] right-4 bottom-4 z-20 w-[390px] bg-white rounded-2xl border border-slate-200 shadow-xl flex flex-col overflow-hidden"
-        >
-          {/* Panel header */}
+        <div key={selected.id} className="absolute top-[68px] right-4 bottom-4 z-20 w-[390px] bg-white rounded-2xl border border-slate-200 shadow-xl flex flex-col overflow-hidden">
           <div className="p-5 shrink-0" style={{ backgroundColor: selected.accent }}>
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
@@ -583,15 +794,10 @@ export function BCMap() {
                 </div>
                 <p className="text-xs text-slate-500 ml-6">{selected.address}</p>
               </div>
-              <button
-                onClick={() => setSelected(null)}
-                className="shrink-0 w-7 h-7 rounded-lg bg-white/80 hover:bg-white flex items-center justify-center transition-colors border border-white/50"
-              >
+              <button onClick={() => setSelected(null)} className="shrink-0 w-7 h-7 rounded-lg bg-white/80 hover:bg-white flex items-center justify-center transition-colors border border-white/50">
                 <X className="w-3.5 h-3.5 text-slate-500" />
               </button>
             </div>
-
-            {/* Stats */}
             <div className="mt-4 grid grid-cols-3 gap-2">
               {[
                 { label: "Total SKUs", value: selected.totalSkus.toLocaleString() },
@@ -604,8 +810,6 @@ export function BCMap() {
                 </div>
               ))}
             </div>
-
-            {/* Alert pills */}
             {(() => {
               const c = counts(selected);
               return (
@@ -627,24 +831,15 @@ export function BCMap() {
               );
             })()}
           </div>
-
-          {/* Contact strip */}
           <div className="px-5 py-2.5 border-b border-slate-100 flex items-center gap-5 text-xs text-slate-500 shrink-0 bg-slate-50/60">
-            <span>
-              <span className="font-medium text-slate-700">Manager: </span>{selected.manager}
-            </span>
-            <span>
-              <span className="font-medium text-slate-700">Tel: </span>{selected.phone}
-            </span>
+            <span><span className="font-medium text-slate-700">Manager: </span>{selected.manager}</span>
+            <span><span className="font-medium text-slate-700">Tel: </span>{selected.phone}</span>
           </div>
-
-          {/* Inventory list */}
           <div className="flex-1 overflow-y-auto">
             <div className="px-5 py-2.5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Inventory</p>
               <p className="text-xs text-slate-400">{selected.inventory.length} categories</p>
             </div>
-
             <div className="divide-y divide-slate-50">
               {selected.inventory.map((item) => {
                 const cfg = statusConfig[item.status];
@@ -655,14 +850,11 @@ export function BCMap() {
                         <p className="text-sm font-semibold text-slate-800 truncate leading-snug">{item.category}</p>
                         <p className="text-[11px] text-slate-400 mt-0.5">SKU {item.sku}</p>
                       </div>
-                      <span
-                        className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}
-                      >
+                      <span className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
                         {cfg.label}
                       </span>
                     </div>
-
                     <div className="mt-2 flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <Package className="w-3 h-3 text-slate-400" />
@@ -677,6 +869,15 @@ export function BCMap() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Results Modal ────────────────────────────────────────── */}
+      {showResults && (
+        <ResultsModal
+          locations={locations}
+          results={resultsData}
+          onClose={() => setShowResults(false)}
+        />
       )}
     </div>
   );
