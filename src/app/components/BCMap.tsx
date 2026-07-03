@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ComposableMap,
   Geographies,
@@ -7,7 +7,7 @@ import {
   Line,
   ZoomableGroup,
 } from "react-simple-maps";
-import { Package, MapPin, X, TrendingUp, AlertCircle, CheckCircle, Warehouse, Plus, Minus, RotateCcw } from "lucide-react";
+import { Package, MapPin, X, TrendingUp, AlertCircle, CheckCircle, Warehouse, Plus, Minus, RotateCcw, Play, Pause } from "lucide-react";
 
 // Canada provinces GeoJSON — provinces filterable by name
 const CANADA_GEO =
@@ -52,7 +52,7 @@ type LocationData = {
   cardSide: "left" | "right";
 };
 
-const locations: LocationData[] = [
+const initialLocations: LocationData[] = [
   {
     id: "kamloops",
     name: "Kamloops",
@@ -67,7 +67,7 @@ const locations: LocationData[] = [
     totalSkus: 847,
     totalValue: "$3.2M",
     cardSide: "left",
-    stock: { current: 3200, reorderPoint: 1500, safetyStock: 800, capacity: 5000, unit: "units" },
+    stock: { current: 3000, reorderPoint: 1500, safetyStock: 800, capacity: 5000, unit: "units" },
     inventory: [
       { category: "Lumber & Wood Products", sku: "LWP-001", quantity: 12400, unit: "board ft", status: "healthy", lastUpdated: "Today, 9:14 AM" },
       { category: "Plumbing Supplies", sku: "PLM-204", quantity: 380, unit: "units", status: "healthy", lastUpdated: "Today, 8:50 AM" },
@@ -93,7 +93,7 @@ const locations: LocationData[] = [
     totalSkus: 614,
     totalValue: "$2.1M",
     cardSide: "right",
-    stock: { current: 1800, reorderPoint: 1200, safetyStock: 600, capacity: 4000, unit: "units" },
+    stock: { current: 3000, reorderPoint: 1200, safetyStock: 600, capacity: 4000, unit: "units" },
     inventory: [
       { category: "Agricultural Supplies", sku: "AGR-001", quantity: 6700, unit: "kg", status: "healthy", lastUpdated: "Today, 8:30 AM" },
       { category: "Irrigation Systems", sku: "IRR-088", quantity: 142, unit: "units", status: "healthy", lastUpdated: "Today, 9:00 AM" },
@@ -106,6 +106,13 @@ const locations: LocationData[] = [
     ],
   },
 ];
+
+function deriveItemStatus(quantity: number, maxQty: number): "healthy" | "low" | "critical" {
+  const pct = quantity / maxQty;
+  if (pct <= 0.1) return "critical";
+  if (pct <= 0.3) return "low";
+  return "healthy";
+}
 
 const statusConfig = {
   healthy: { color: "text-green-600", bg: "bg-green-50", border: "border-green-100", label: "Healthy", dot: "bg-green-500" },
@@ -121,11 +128,79 @@ function counts(loc: LocationData) {
   };
 }
 
+// Store original max quantities per item for simulation scaling
+const itemMaxQty: Record<string, number> = {};
+initialLocations.forEach((loc) => {
+  loc.inventory.forEach((item) => {
+    itemMaxQty[item.sku] = item.quantity;
+  });
+});
+
+function nowStr() {
+  return new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
+}
+
 export function BCMap() {
+  const [locations, setLocations] = useState<LocationData[]>(initialLocations);
   const [selected, setSelected] = useState<LocationData | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState<[number, number]>([-119.8, 50.35]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Keep selected in sync with locations state so the detail panel updates live
+  useEffect(() => {
+    if (selected) {
+      const updated = locations.find((l) => l.id === selected.id);
+      if (updated) setSelected(updated);
+    }
+  }, [locations]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      intervalRef.current = setInterval(() => {
+        setLocations((prev) =>
+          prev.map((loc) => {
+            // Drain stock by a random amount each tick
+            let newCurrent = loc.stock.current - Math.floor(Math.random() * 220 + 80);
+
+            // Restock when hitting near-zero
+            if (newCurrent < loc.stock.safetyStock * 0.4) {
+              newCurrent = loc.stock.capacity * (0.7 + Math.random() * 0.2);
+            }
+
+            newCurrent = Math.round(Math.max(0, Math.min(newCurrent, loc.stock.capacity)));
+
+            // Update inventory items proportionally to overall stock level
+            const stockPct = newCurrent / loc.stock.capacity;
+            const newInventory = loc.inventory.map((item) => {
+              const maxQ = itemMaxQty[item.sku] ?? item.quantity;
+              // Each item fluctuates independently with some noise
+              const noise = 0.85 + Math.random() * 0.3;
+              const newQty = Math.max(0, Math.round(maxQ * stockPct * noise));
+              return {
+                ...item,
+                quantity: newQty,
+                status: deriveItemStatus(newQty, maxQ),
+                lastUpdated: `Today, ${nowStr()}`,
+              };
+            });
+
+            return { ...loc, stock: { ...loc.stock, current: newCurrent }, inventory: newInventory };
+          })
+        );
+      }, 1200);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isPlaying]);
 
   const toggle = (loc: LocationData) =>
     setSelected((prev) => (prev?.id === loc.id ? null : loc));
@@ -174,6 +249,30 @@ export function BCMap() {
               </button>
             );
           })}
+
+          {/* Play / Pause button */}
+          <button
+            onClick={() => setIsPlaying((p) => !p)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ml-2"
+            style={{
+              borderColor: isPlaying ? "#dc2626" : "#2563eb",
+              backgroundColor: isPlaying ? "#fee2e2" : "#dbeafe",
+              color: isPlaying ? "#dc2626" : "#2563eb",
+            }}
+            title={isPlaying ? "Pause simulation" : "Play simulation"}
+          >
+            {isPlaying ? (
+              <>
+                <Pause className="w-3.5 h-3.5" />
+                Pause
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5" />
+                Play
+              </>
+            )}
+          </button>
         </div>
       </header>
 
