@@ -12,19 +12,20 @@ import {
 
 // ─── Simulation constants (from spec) ─────────────────────────────────────────
 
-const SIM_Q    = 1000;                             // Order quantity
-const SIM_SS   = 100;                              // Safety stock (per region)
-const SIM_LT   = 16;                               // Lead time (hours)
-const SIM_D    = 5;                                // Average hourly demand per region
-const SIM_STD  = 2;                                // Std dev of hourly demand
-const SIM_ROP  = SIM_D * SIM_LT + SIM_SS;         // = 180
-const SIM_INIT = SIM_Q + SIM_SS;                   // = 1100 initial inventory
-const SIM_CAP  = SIM_Q * 3;                        // Visual capacity bar (3000)
-const SIM_HOURS = 2920;                            // 365 days * 8 hrs/day
+const SIM_Q     = 1000;
+const SIM_SS    = 100;                         // safety stock per region (baseline)
+const SIM_LT    = 16;                          // lead time in hours
+const SIM_D     = 5;                           // average hourly demand per region
+const SIM_STD   = 2;
+const SIM_ROP   = SIM_D * SIM_LT + SIM_SS;    // = 180
+const SIM_INIT  = SIM_Q + SIM_SS;             // = 1100
+const SIM_CAP   = SIM_Q * 3;                  // visual capacity bar
+const SIM_HOURS = 2920;                        // 365 * 8
 
-const CANADA_GEO        = "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
-const US_GEO            = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
-const CENTRAL_HUB_COORDS: [number, number] = [-119.91, 50.28];
+const CANADA_GEO       = "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
+const US_GEO           = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
+const CENTRAL_HUB_COORDS: [number, number] = [-119.91, 50.28]; // S2 hub
+const DC_S3_COORDS:       [number, number] = [-119.55, 50.05]; // S3 distribution centre
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ type LocationData = {
 
 type LocSimState = {
   inventory: number;
-  orderDeliveryHour: number; // 0 = no pending order
+  orderDeliveryHour: number;
   replenishmentOrders: number;
   stockoutInstances: number;
   demandLost: number;
@@ -63,9 +64,10 @@ type SimStats = {
   replenishmentOrders: number;
   demandLost: number;
   totalDemand: number;
+  demandServedFromDC: number;
 };
 
-// ─── Demand generation (normal distribution, truncated at 0) ──────────────────
+// ─── Demand (generated once at module load, shared across all scenarios) ──────
 
 function normalRandom(mean: number, std: number): number {
   const u1 = Math.random(), u2 = Math.random();
@@ -73,7 +75,6 @@ function normalRandom(mean: number, std: number): number {
   return Math.max(0, Math.round(mean + z * std));
 }
 
-// Generated once at module load — shared across all scenario runs
 const SHARED_DEMAND = {
   r1: Array.from({ length: SIM_HOURS }, () => normalRandom(SIM_D, SIM_STD)),
   r2: Array.from({ length: SIM_HOURS }, () => normalRandom(SIM_D, SIM_STD)),
@@ -85,68 +86,90 @@ function initLocState(initInv = SIM_INIT): LocSimState {
   return { inventory: initInv, orderDeliveryHour: 0, replenishmentOrders: 0, stockoutInstances: 0, demandLost: 0, totalDemand: 0 };
 }
 
-function stepIndep(
-  s: LocSimState, demand: number, h: number,
-): { next: LocSimState; newStockout: boolean } {
-  let inv = s.inventory;
-  let orderHour = s.orderDeliveryHour;
-
-  // Receive delivery if due
+// Scenario 1: independent facilities
+function stepIndep(s: LocSimState, demand: number, h: number): { next: LocSimState; newStockout: boolean } {
+  let inv = s.inventory, orderHour = s.orderDeliveryHour;
   if (orderHour > 0 && h >= orderHour) { inv += SIM_Q; orderHour = 0; }
-
-  // Place replenishment order when crossing ROP downward (only if no pending order)
   let repOrders = s.replenishmentOrders;
-  if (orderHour === 0 && inv > SIM_ROP && inv - demand <= SIM_ROP) {
-    orderHour = h + SIM_LT;
-    repOrders += 1;
-  }
-
-  // Detect stockout instance (positive → zero transition)
-  let stockouts = s.stockoutInstances;
-  let newStockout = false;
-  if (inv >= 1 && inv - demand <= 0) { stockouts += 1; newStockout = true; }
-
-  // Apply demand
+  if (orderHour === 0 && inv > SIM_ROP && inv - demand <= SIM_ROP) { orderHour = h + SIM_LT; repOrders++; }
+  let stockouts = s.stockoutInstances; let newStockout = false;
+  if (inv >= 1 && inv - demand <= 0) { stockouts++; newStockout = true; }
   let demandLost = s.demandLost;
   if (demand <= inv) { inv -= demand; } else { demandLost += demand - inv; inv = 0; }
-
-  return {
-    next: { inventory: inv, orderDeliveryHour: orderHour, replenishmentOrders: repOrders, stockoutInstances: stockouts, demandLost, totalDemand: s.totalDemand + demand },
-    newStockout,
-  };
+  return { next: { inventory: inv, orderDeliveryHour: orderHour, replenishmentOrders: repOrders, stockoutInstances: stockouts, demandLost, totalDemand: s.totalDemand + demand }, newStockout };
 }
 
-function stepPooled(
-  s: LocSimState, demandR1: number, demandR2: number, h: number,
-): { next: LocSimState; newStockout: boolean } {
+// Scenario 2: pooled (combined inventory at hub)
+function stepPooled(s: LocSimState, demandR1: number, demandR2: number, h: number): { next: LocSimState; newStockout: boolean } {
   const combinedDemand = demandR1 + demandR2;
   const Q2 = SIM_Q * 2, ROP2 = SIM_ROP * 2;
-
-  let inv = s.inventory;
-  let orderHour = s.orderDeliveryHour;
-
+  let inv = s.inventory, orderHour = s.orderDeliveryHour;
   if (orderHour > 0 && h >= orderHour) { inv += Q2; orderHour = 0; }
-
   let repOrders = s.replenishmentOrders;
-  if (orderHour === 0 && inv > ROP2 && inv - combinedDemand <= ROP2) {
-    orderHour = h + SIM_LT;
-    repOrders += 1;
-  }
-
-  let stockouts = s.stockoutInstances;
-  let newStockout = false;
-  if (inv >= 1 && inv - combinedDemand <= 0) { stockouts += 1; newStockout = true; }
-
+  if (orderHour === 0 && inv > ROP2 && inv - combinedDemand <= ROP2) { orderHour = h + SIM_LT; repOrders++; }
+  let stockouts = s.stockoutInstances; let newStockout = false;
+  if (inv >= 1 && inv - combinedDemand <= 0) { stockouts++; newStockout = true; }
   let demandLost = s.demandLost;
   if (combinedDemand <= inv) { inv -= combinedDemand; } else { demandLost += combinedDemand - inv; inv = 0; }
+  return { next: { inventory: inv, orderDeliveryHour: orderHour, replenishmentOrders: repOrders, stockoutInstances: stockouts, demandLost, totalDemand: s.totalDemand + combinedDemand }, newStockout };
+}
+
+// Scenario 3: partial safety-stock centralisation
+type S3Result = {
+  nextR1: LocSimState; nextR2: LocSimState;
+  nextDcInv: number;
+  dsfdc1Delta: number; dsfdc2Delta: number;
+  newStockout: boolean;
+};
+function stepS3(
+  r1: LocSimState, r2: LocSimState,
+  dcInv: number, r1d: number, r2d: number, h: number,
+  ssR1: number, ssR2: number,
+): S3Result {
+  const ropR1 = SIM_D * SIM_LT + ssR1;
+  const ropR2 = SIM_D * SIM_LT + ssR2;
+  let inv1 = r1.inventory, oh1 = r1.orderDeliveryHour;
+  let inv2 = r2.inventory, oh2 = r2.orderDeliveryHour;
+  let dc   = dcInv;
+
+  if (oh1 > 0 && h >= oh1) { inv1 += SIM_Q; oh1 = 0; }
+  if (oh2 > 0 && h >= oh2) { inv2 += SIM_Q; oh2 = 0; }
+
+  let rep1 = r1.replenishmentOrders, rep2 = r2.replenishmentOrders;
+  if (oh1 === 0 && inv1 > ropR1 && inv1 - r1d <= ropR1) { oh1 = h + SIM_LT; rep1++; }
+  if (oh2 === 0 && inv2 > ropR2 && inv2 - r2d <= ropR2) { oh2 = h + SIM_LT; rep2++; }
+
+  let so1 = r1.stockoutInstances, dl1 = r1.demandLost;
+  let so2 = r2.stockoutInstances, dl2 = r2.demandLost;
+  let dsfdc1 = 0, dsfdc2 = 0;
+  let newStockout = false;
+
+  // Region 1 fulfillment
+  if (r1d <= inv1) {
+    inv1 -= r1d;
+  } else {
+    const rem = r1d - inv1; inv1 = 0;
+    if (dc >= rem) { dc -= rem; dsfdc1 += rem; }
+    else { dsfdc1 += dc; dl1 += rem - dc; dc = 0; so1++; newStockout = true; }
+  }
+
+  // Region 2 fulfillment
+  if (r2d <= inv2) {
+    inv2 -= r2d;
+  } else {
+    const rem = r2d - inv2; inv2 = 0;
+    if (dc >= rem) { dc -= rem; dsfdc2 += rem; }
+    else { dsfdc2 += dc; dl2 += rem - dc; dc = 0; so2++; newStockout = true; }
+  }
 
   return {
-    next: { inventory: inv, orderDeliveryHour: orderHour, replenishmentOrders: repOrders, stockoutInstances: stockouts, demandLost, totalDemand: s.totalDemand + combinedDemand },
-    newStockout,
+    nextR1: { inventory: inv1, orderDeliveryHour: oh1, replenishmentOrders: rep1, stockoutInstances: so1, demandLost: dl1, totalDemand: r1.totalDemand + r1d },
+    nextR2: { inventory: inv2, orderDeliveryHour: oh2, replenishmentOrders: rep2, stockoutInstances: so2, demandLost: dl2, totalDemand: r2.totalDemand + r2d },
+    nextDcInv: dc, dsfdc1Delta: dsfdc1, dsfdc2Delta: dsfdc2, newStockout,
   };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────���───────
 
 function deriveItemStatus(qty: number, maxQty: number): "healthy" | "low" | "critical" {
   const p = qty / maxQty;
@@ -169,12 +192,10 @@ function counts(loc: LocationData) {
   };
 }
 
-function nowStr() {
-  return new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
-}
+function nowStr() { return new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" }); }
 
 function emptyStats(): SimStats {
-  return { demands: [], stockoutInstances: 0, replenishmentOrders: 0, demandLost: 0, totalDemand: 0 };
+  return { demands: [], stockoutInstances: 0, replenishmentOrders: 0, demandLost: 0, totalDemand: 0, demandServedFromDC: 0 };
 }
 
 function normalPDF(x: number, mean: number, std: number) {
@@ -239,7 +260,13 @@ const initialLocations: LocationData[] = [
 
 initialLocations.forEach((loc) => loc.inventory.forEach((item) => { itemMaxQty[item.sku] = item.quantity; }));
 
-function getScenarioLocations(scenario: ScenarioId): LocationData[] {
+function s3Params(centralPct: number) {
+  const ssDC = Math.round(2 * SIM_SS * centralPct / 100);
+  const ssR  = Math.round((2 * SIM_SS - ssDC) / 2);
+  return { ssDC, ssR, ropR: SIM_D * SIM_LT + ssR, initR: SIM_Q + ssR };
+}
+
+function getScenarioLocations(scenario: ScenarioId, centralPct = 50): LocationData[] {
   if (scenario === 2) {
     const hubStock: StockMetrics = {
       current: SIM_INIT * 2, reorderPoint: SIM_ROP * 2,
@@ -250,24 +277,31 @@ function getScenarioLocations(scenario: ScenarioId): LocationData[] {
       { ...initialLocations[1], stock: { current: 0, reorderPoint: 0, safetyStock: 0, capacity: 0, unit: "units" } },
     ];
   }
+  if (scenario === 3) {
+    const { ssR, ropR, initR } = s3Params(centralPct);
+    return [
+      { ...initialLocations[0], stock: { current: initR, reorderPoint: ropR, safetyStock: ssR, capacity: SIM_CAP, unit: "units" } },
+      { ...initialLocations[1], stock: { current: initR, reorderPoint: ropR, safetyStock: ssR, capacity: SIM_CAP, unit: "units" } },
+    ];
+  }
   return initialLocations.map((loc) => ({ ...loc, stock: { ...loc.stock, current: SIM_INIT } }));
 }
 
 // ─── Results Modal ────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, sub, alert = false }: { label: string; value: string; sub: string; alert?: boolean }) {
+function StatCard({ label, value, sub, alert = false, info = false }: { label: string; value: string; sub: string; alert?: boolean; info?: boolean }) {
   return (
-    <div className={`rounded-lg px-3 py-2.5 border ${alert ? "bg-red-50 border-red-100" : "bg-slate-50 border-slate-100"}`}>
-      <p className={`text-[10px] font-semibold uppercase tracking-wider ${alert ? "text-red-400" : "text-slate-400"}`}>{label}</p>
-      <p className={`text-sm font-bold mt-0.5 ${alert ? "text-red-600" : "text-slate-800"}`}>{value}</p>
+    <div className={`rounded-lg px-3 py-2.5 border ${alert ? "bg-red-50 border-red-100" : info ? "bg-violet-50 border-violet-100" : "bg-slate-50 border-slate-100"}`}>
+      <p className={`text-[10px] font-semibold uppercase tracking-wider ${alert ? "text-red-400" : info ? "text-violet-400" : "text-slate-400"}`}>{label}</p>
+      <p className={`text-sm font-bold mt-0.5 ${alert ? "text-red-600" : info ? "text-violet-700" : "text-slate-800"}`}>{value}</p>
       <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>
     </div>
   );
 }
 
 function ResultsModal({
-  locations, results, isPooled, onClose,
-}: { locations: LocationData[]; results: Record<string, SimStats>; isPooled: boolean; onClose: () => void }) {
+  locations, results, isPooled, isS3, dcInitial, onClose,
+}: { locations: LocationData[]; results: Record<string, SimStats>; isPooled: boolean; isS3: boolean; dcInitial: number; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
@@ -282,12 +316,34 @@ function ResultsModal({
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-8">
+          {/* DC summary row for S3 */}
+          {isS3 && (() => {
+            const r1 = results["kamloops"] ?? emptyStats();
+            const r2 = results["kelowna"]  ?? emptyStats();
+            const totalDsfdc = r1.demandServedFromDC + r2.demandServedFromDC;
+            return (
+              <div className="rounded-xl border border-violet-200 bg-violet-50 px-5 py-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-3 h-3 rounded-full bg-violet-600 shrink-0" />
+                  <h3 className="text-base font-bold text-slate-800">Distribution Centre (DC)</h3>
+                  <span className="text-xs text-slate-400 ml-1">· emergency safety-stock buffer</span>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <StatCard label="DC Safety Stock" value={`${dcInitial} units`} sub="initial allocation" info />
+                  <StatCard label="Served R1 from DC" value={`${r1.demandServedFromDC.toLocaleString()} units`} sub="Kamloops overflow" info />
+                  <StatCard label="Served R2 from DC" value={`${r2.demandServedFromDC.toLocaleString()} units`} sub="Kelowna overflow" info />
+                  <StatCard label="Total from DC" value={`${totalDsfdc.toLocaleString()} units`} sub="combined DC draws" info />
+                </div>
+              </div>
+            );
+          })()}
+
           {locations.map((loc, idx) => {
             const stats = results[loc.id] ?? emptyStats();
             const { mean, std, points } = buildCurveData(stats.demands);
-            const fillRate    = stats.totalDemand > 0 ? (1 - stats.demandLost / stats.totalDemand) * 100 : 100;
-            const svcLevel    = stats.replenishmentOrders > 0 ? (1 - stats.stockoutInstances / stats.replenishmentOrders) * 100 : 100;
-            const ticks       = stats.demands.length;
+            const fillRate = stats.totalDemand > 0 ? (1 - stats.demandLost / stats.totalDemand) * 100 : 100;
+            const svcLevel = stats.replenishmentOrders > 0 ? (1 - stats.stockoutInstances / stats.replenishmentOrders) * 100 : 100;
+            const ticks    = stats.demands.length;
 
             return (
               <div key={loc.id}>
@@ -307,7 +363,7 @@ function ResultsModal({
                       σ = <span className="font-semibold text-slate-700">{std.toFixed(2)}</span> units/hr
                     </p>
                     {points.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={180}>
+                      <ResponsiveContainer width="100%" height={160}>
                         <AreaChart data={points} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                           <defs>
                             <linearGradient id={`grad-${loc.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -330,7 +386,7 @@ function ResultsModal({
                         </AreaChart>
                       </ResponsiveContainer>
                     ) : (
-                      <div className="h-[180px] flex items-center justify-center text-xs text-slate-400">No data recorded</div>
+                      <div className="h-[160px] flex items-center justify-center text-xs text-slate-400">No data recorded</div>
                     )}
                   </div>
 
@@ -340,12 +396,12 @@ function ResultsModal({
                         <div>
                           <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: loc.color }}>Fill Rate</p>
                           <p className="text-2xl font-black mt-0.5" style={{ color: loc.color }}>{fillRate.toFixed(1)}%</p>
-                          <p className="text-[10px] text-slate-500 mt-0.5">1 − Demand Lost / Total</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">1 − Lost / Total</p>
                         </div>
                         <div>
                           <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: loc.color }}>Service Level</p>
                           <p className="text-2xl font-black mt-0.5" style={{ color: loc.color }}>{svcLevel.toFixed(1)}%</p>
-                          <p className="text-[10px] text-slate-500 mt-0.5">1 − Stockouts / Rep. Orders</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">1 − Stockouts / Orders</p>
                         </div>
                       </div>
                     </div>
@@ -353,7 +409,10 @@ function ResultsModal({
                       <StatCard label="Stockout Instances" value={stats.stockoutInstances.toString()} sub="positive→zero transitions" alert={stats.stockoutInstances > 0} />
                       <StatCard label="Replenishment Orders" value={stats.replenishmentOrders.toString()} sub="orders placed" />
                       <StatCard label="Total Demand Lost" value={`${stats.demandLost.toLocaleString()} units`} sub="unmet demand" alert={stats.demandLost > 0} />
-                      <StatCard label="Total Demand" value={`${stats.totalDemand.toLocaleString()} units`} sub={`over ${ticks} hours`} />
+                      {isS3
+                        ? <StatCard label="Served from DC" value={`${stats.demandServedFromDC.toLocaleString()} units`} sub="via DC backup" info />
+                        : <StatCard label="Total Demand" value={`${stats.totalDemand.toLocaleString()} units`} sub={`over ${ticks} hours`} />
+                      }
                     </div>
                   </div>
                 </div>
@@ -365,12 +424,47 @@ function ResultsModal({
         </div>
 
         <div className="px-6 py-3 border-t border-slate-100 flex justify-end shrink-0">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-colors">
-            Close
-          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-colors">Close</button>
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Inventory card SVG (reused for all scenarios) ────────────────────────────
+
+function InventoryCard({ s, color, label, isCritical }: {
+  s: StockMetrics; color: string; label: string; isCritical?: boolean;
+}) {
+  const W = 168, H = 118, barW = 138, barH = 9;
+  const fillPct  = s.capacity > 0 ? s.current / s.capacity : 0;
+  const ropPct   = s.capacity > 0 ? s.reorderPoint / s.capacity : 0;
+  const ssPct    = s.capacity > 0 ? s.safetyStock  / s.capacity : 0;
+  const fillColor = s.current <= s.safetyStock ? "#ef4444" : s.current <= s.reorderPoint ? "#f59e0b" : color;
+  return (
+    <g>
+      <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
+      <rect width={W} height={H} rx={7} fill="white" stroke={isCritical ? "#ef4444" : color} strokeWidth={isCritical ? 2.5 : 1.5} strokeOpacity={isCritical ? 0.9 : 0.35} />
+      <rect width={4} height={H} rx={2} fill={isCritical ? "#ef4444" : color} />
+      <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">{label}</text>
+      <text x={14} y={33} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Current Level</text>
+      <text x={W - 10} y={33} textAnchor="end" fontSize={9} fontWeight="700" fill={fillColor} fontFamily="system-ui, sans-serif">{s.current.toLocaleString()} {s.unit}</text>
+      <line x1={14} y1={39} x2={W - 10} y2={39} stroke="#f1f5f9" strokeWidth={1} />
+      <circle cx={17.5} cy={51} r={3.5} fill="#fef3c7" stroke="#f59e0b" strokeWidth={1} />
+      <text x={24} y={55} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Reorder Point</text>
+      <text x={W - 10} y={55} textAnchor="end" fontSize={9} fontWeight="600" fill="#d97706" fontFamily="system-ui, sans-serif">{s.reorderPoint.toLocaleString()} {s.unit}</text>
+      <circle cx={17.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
+      <text x={24} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
+      <text x={W - 10} y={73} textAnchor="end" fontSize={9} fontWeight="600" fill="#dc2626" fontFamily="system-ui, sans-serif">{s.safetyStock.toLocaleString()} {s.unit}</text>
+      <g transform="translate(14, 84)">
+        <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
+        <rect width={Math.max(barW * fillPct, barH)} height={barH} rx={4} fill={fillColor} fillOpacity={0.8} />
+        <line x1={barW * ropPct} y1={-3} x2={barW * ropPct} y2={barH + 3} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
+        <line x1={barW * ssPct}  y1={-3} x2={barW * ssPct}  y2={barH + 3} stroke="#ef4444" strokeWidth={2} strokeLinecap="round" />
+        <text x={barW * ropPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#d97706" fontWeight="600" fontFamily="system-ui, sans-serif">ROP</text>
+        <text x={barW * ssPct}  y={barH + 13} textAnchor="middle" fontSize={7} fill="#dc2626" fontWeight="600" fontFamily="system-ui, sans-serif">SS</text>
+      </g>
+    </g>
   );
 }
 
@@ -378,6 +472,7 @@ function ResultsModal({
 
 export function BCMap() {
   const [activeScenario, setActiveScenario]     = useState<ScenarioId>(1);
+  const [centralSSPct, setCentralSSPct]         = useState(50);   // S3 slider: % of SS at DC
   const [locations, setLocations]               = useState<LocationData[]>(getScenarioLocations(1));
   const [selected, setSelected]                 = useState<LocationData | null>(null);
   const [hovered, setHovered]                   = useState<string | null>(null);
@@ -389,30 +484,44 @@ export function BCMap() {
   const [currentHour, setCurrentHour]           = useState(0);
   const [speedMs, setSpeedMs]                   = useState(200);
   const [pausedOnStockout, setPausedOnStockout] = useState(false);
+  const [dcInventory, setDcInventory]           = useState(0);   // S3 DC display
 
   const intervalRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const hourRef          = useRef(0);
   const simStateRef      = useRef<Record<string, LocSimState>>({});
   const statsRef         = useRef<Record<string, SimStats>>({});
+  const dcInvRef         = useRef(0);
   const scenarioRef      = useRef<ScenarioId>(1);
+  const centralPctRef    = useRef(50);
   const firstStockoutRef = useRef(false);
+  const dcInitialRef     = useRef(0); // for results modal
 
-  const initSim = (scenario: ScenarioId) => {
-    simStateRef.current = scenario === 2
-      ? { kamloops: initLocState(SIM_INIT * 2), kelowna: initLocState() }
-      : { kamloops: initLocState(), kelowna: initLocState() };
+  const initSim = (scenario: ScenarioId, pct: number) => {
+    const { ssDC, ssR, initR } = s3Params(pct);
+    if (scenario === 2) {
+      simStateRef.current = { kamloops: initLocState(SIM_INIT * 2), kelowna: initLocState() };
+      dcInvRef.current = 0;
+    } else if (scenario === 3) {
+      simStateRef.current = { kamloops: initLocState(initR), kelowna: initLocState(initR) };
+      dcInvRef.current = ssDC;
+      dcInitialRef.current = ssDC;
+    } else {
+      simStateRef.current = { kamloops: initLocState(), kelowna: initLocState() };
+      dcInvRef.current = 0;
+    }
     statsRef.current = {};
     hourRef.current  = 0;
     firstStockoutRef.current = false;
   };
 
-  const resetAll = (scenario: ScenarioId) => {
+  const resetAll = (scenario: ScenarioId, pct = centralSSPct) => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-    initSim(scenario);
+    initSim(scenario, pct);
     setIsPlaying(false);
     setPausedOnStockout(false);
     setCurrentHour(0);
-    setLocations(getScenarioLocations(scenario));
+    setDcInventory(dcInvRef.current);
+    setLocations(getScenarioLocations(scenario, pct));
     setSelected(null);
   };
 
@@ -420,6 +529,12 @@ export function BCMap() {
     scenarioRef.current = s;
     setActiveScenario(s);
     resetAll(s);
+  };
+
+  const handleCentralPctChange = (pct: number) => {
+    centralPctRef.current = pct;
+    setCentralSSPct(pct);
+    resetAll(3, pct);
   };
 
   // Sync detail panel
@@ -430,7 +545,7 @@ export function BCMap() {
     }
   }, [locations]);
 
-  // Simulation loop
+  // ── Simulation loop ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isPlaying) {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -438,7 +553,9 @@ export function BCMap() {
     }
 
     intervalRef.current = setInterval(() => {
-      const h = hourRef.current;
+      const h        = hourRef.current;
+      const scenario = scenarioRef.current;
+
       if (h >= SIM_HOURS) {
         clearInterval(intervalRef.current!); intervalRef.current = null;
         setIsPlaying(false);
@@ -449,11 +566,11 @@ export function BCMap() {
         return;
       }
 
-      const scenario = scenarioRef.current;
       const r1d = SHARED_DEMAND.r1[h];
       const r2d = SHARED_DEMAND.r2[h];
       let anyNewStockout = false;
 
+      // ── Scenario 2: pooled ────────────────────────────────────────────────
       if (scenario === 2) {
         const hub = simStateRef.current["kamloops"] ?? initLocState(SIM_INIT * 2);
         const { next, newStockout } = stepPooled(hub, r1d, r2d, h);
@@ -466,7 +583,7 @@ export function BCMap() {
         if (newStockout) anyNewStockout = true;
 
         const cap = SIM_CAP * 2;
-        const stockPct = cap > 0 ? next.inventory / cap : 0;
+        const pct = cap > 0 ? next.inventory / cap : 0;
         setLocations((prev) => prev.map((loc, i) => {
           if (i !== 0) return loc;
           return {
@@ -474,11 +591,59 @@ export function BCMap() {
             stock: { ...loc.stock, current: next.inventory },
             inventory: loc.inventory.map((item) => {
               const maxQ = itemMaxQty[item.sku] ?? item.quantity;
+              const qty  = Math.max(0, Math.round(maxQ * pct * (0.85 + Math.random() * 0.3)));
+              return { ...item, quantity: qty, status: deriveItemStatus(qty, maxQ), lastUpdated: `Today, ${nowStr()}` };
+            }),
+          };
+        }));
+
+      // ── Scenario 3: partial SS centralisation ────────────────────────────
+      } else if (scenario === 3) {
+        const pct   = centralPctRef.current;
+        const { ssR, ropR } = s3Params(pct);
+        const r1s   = simStateRef.current["kamloops"] ?? initLocState();
+        const r2s   = simStateRef.current["kelowna"]  ?? initLocState();
+        const dcInv = dcInvRef.current;
+        const prevDsfdc1 = statsRef.current["kamloops"]?.demandServedFromDC ?? 0;
+        const prevDsfdc2 = statsRef.current["kelowna"]?.demandServedFromDC  ?? 0;
+
+        const res = stepS3(r1s, r2s, dcInv, r1d, r2d, h, ssR, ssR);
+        simStateRef.current["kamloops"] = res.nextR1;
+        simStateRef.current["kelowna"]  = res.nextR2;
+        dcInvRef.current = res.nextDcInv;
+
+        for (const [id, next, demand, dsfDelta] of [
+          ["kamloops", res.nextR1, r1d, res.dsfdc1Delta],
+          ["kelowna",  res.nextR2, r2d, res.dsfdc2Delta],
+        ] as [string, LocSimState, number, number][]) {
+          if (!statsRef.current[id]) statsRef.current[id] = emptyStats();
+          const st = statsRef.current[id];
+          st.demands.push(demand);
+          st.totalDemand = next.totalDemand; st.demandLost = next.demandLost;
+          st.stockoutInstances = next.stockoutInstances; st.replenishmentOrders = next.replenishmentOrders;
+          st.demandServedFromDC += dsfDelta;
+        }
+
+        if (res.newStockout) anyNewStockout = true;
+        setDcInventory(res.nextDcInv);
+        setLocations((prev) => prev.map((loc) => {
+          const next = loc.id === "kamloops" ? res.nextR1 : res.nextR2;
+          const stockPct = SIM_CAP > 0 ? next.inventory / SIM_CAP : 0;
+          return {
+            ...loc,
+            stock: { current: next.inventory, reorderPoint: ropR, safetyStock: ssR, capacity: SIM_CAP, unit: "units" },
+            inventory: loc.inventory.map((item) => {
+              const maxQ = itemMaxQty[item.sku] ?? item.quantity;
               const qty  = Math.max(0, Math.round(maxQ * stockPct * (0.85 + Math.random() * 0.3)));
               return { ...item, quantity: qty, status: deriveItemStatus(qty, maxQ), lastUpdated: `Today, ${nowStr()}` };
             }),
           };
         }));
+
+        // suppress prevDsfdc warning
+        void prevDsfdc1; void prevDsfdc2;
+
+      // ── Scenario 1 (& default): independent ──────────────────────────────
       } else {
         const updates: Record<string, LocSimState> = {};
         for (const [id, demand] of [["kamloops", r1d], ["kelowna", r2d]] as [string, number][]) {
@@ -508,7 +673,6 @@ export function BCMap() {
         }));
       }
 
-      // Auto-pause on first stockout
       if (anyNewStockout && !firstStockoutRef.current) {
         firstStockoutRef.current = true;
         setPausedOnStockout(true);
@@ -531,7 +695,11 @@ export function BCMap() {
       }
       setIsPlaying(false);
     } else {
-      if (hourRef.current === 0) { initSim(activeScenario); setLocations(getScenarioLocations(activeScenario)); }
+      if (hourRef.current === 0) {
+        initSim(activeScenario, centralSSPct);
+        setLocations(getScenarioLocations(activeScenario, centralSSPct));
+        setDcInventory(dcInvRef.current);
+      }
       setPausedOnStockout(false);
       setIsPlaying(true);
     }
@@ -542,8 +710,12 @@ export function BCMap() {
   const zoomOut   = () => setZoom((z) => Math.max(z / 1.5, 0.5));
   const resetView = () => { setZoom(1); setCenter([-119.8, 50.35]); };
 
-  const isPooled  = activeScenario === 2;
+  const isPooled = activeScenario === 2;
+  const isS3     = activeScenario === 3;
   const hourOfDay = currentHour % 8;
+
+  // S3 derived params for display
+  const { ssDC, ssR: ssRCur } = s3Params(centralSSPct);
 
   return (
     <div className="relative w-full h-full bg-slate-100 overflow-hidden font-sans">
@@ -565,18 +737,21 @@ export function BCMap() {
         {/* Center: scenario tabs */}
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 shrink-0">
           {([1, 2, 3] as ScenarioId[]).map((s) => {
-            const info = { 1: ["Scenario 1", "Decentralized"], 2: ["Scenario 2", "Centralized"], 3: ["Scenario 3", "Coming Soon"] } as const;
+            const info = {
+              1: ["Scenario 1", "Decentralized"],
+              2: ["Scenario 2", "Centralized"],
+              3: ["Scenario 3", "Partial Pool"],
+            } as const;
             const [label, sub] = info[s];
             const isActive = activeScenario === s;
-            const disabled = s === 3;
             return (
-              <button key={s} onClick={() => !disabled && handleScenarioChange(s)} disabled={disabled}
-                className={`flex flex-col items-center px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                  isActive ? "bg-white shadow-sm text-slate-900" : disabled ? "text-slate-300 cursor-not-allowed" : "text-slate-500 hover:text-slate-800 cursor-pointer"
+              <button key={s} onClick={() => handleScenarioChange(s)}
+                className={`flex flex-col items-center px-4 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                  isActive ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-800"
                 }`}
               >
                 <span>{label}</span>
-                <span className={`text-[10px] font-normal mt-0.5 ${isActive ? "text-slate-500" : disabled ? "text-slate-300" : "text-slate-400"}`}>{sub}</span>
+                <span className={`text-[10px] font-normal mt-0.5 ${isActive ? "text-slate-500" : "text-slate-400"}`}>{sub}</span>
               </button>
             );
           })}
@@ -588,11 +763,24 @@ export function BCMap() {
           {currentHour > 0 && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-500 shrink-0">
               <span className="font-semibold text-slate-700">Day {Math.floor(currentHour / 8) + 1}</span>
-
               <span className="text-slate-300">·</span>
               <span>Hr {hourOfDay + 1}</span>
               <span className="text-slate-300 mx-0.5">|</span>
               <span className="tabular-nums">{currentHour}/{SIM_HOURS}</span>
+            </div>
+          )}
+
+          {/* S3: DC safety-stock split slider */}
+          {isS3 && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-200 shrink-0">
+              <span className="text-[10px] text-violet-500 font-semibold uppercase">DC SS%</span>
+              <input
+                type="range" min={0} max={100} step={25} value={centralSSPct}
+                onChange={(e) => handleCentralPctChange(Number(e.target.value))}
+                className="w-20 h-1.5 accent-violet-600"
+                title={`${centralSSPct}% of safety stock at DC`}
+              />
+              <span className="text-[10px] text-violet-700 font-bold w-8 text-left">{centralSSPct}%</span>
             </div>
           )}
 
@@ -643,7 +831,7 @@ export function BCMap() {
         </div>
       </header>
 
-      {/* ── Stockout auto-pause banner ──────────────────────────────── */}
+      {/* ── Stockout banner ──────────────────────────────────────────── */}
       {pausedOnStockout && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30">
           <div className="flex items-center gap-3 bg-red-600 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-semibold">
@@ -681,58 +869,31 @@ export function BCMap() {
               })}
             </Geographies>
 
-            {isPooled ? (
+            {/* ── Scenario 2: pooled central hub ─────────────────────── */}
+            {isPooled && (
               <>
                 <Line from={locations[0].coordinates} to={CENTRAL_HUB_COORDS} stroke="#0d9488" strokeWidth={2} strokeDasharray="6 3" strokeLinecap="round" />
                 <Line from={locations[1].coordinates} to={CENTRAL_HUB_COORDS} stroke="#0d9488" strokeWidth={2} strokeDasharray="6 3" strokeLinecap="round" />
-
-                {/* Central hub card */}
                 {(() => {
                   const hub = locations[0]; const s = hub.stock;
-                  const W = 168, H = 118, barW = 138, barH = 9;
-                  const fillPct  = s.capacity > 0 ? s.current / s.capacity : 0;
-                  const ropPct   = s.capacity > 0 ? s.reorderPoint / s.capacity : 0;
-                  const ssPct    = s.capacity > 0 ? s.safetyStock / s.capacity : 0;
-                  const fillColor = s.current <= s.safetyStock ? "#ef4444" : s.current <= s.reorderPoint ? "#f59e0b" : "#0d9488";
-                  const hubStats = statsRef.current["kamloops"];
-                  const hasStockout = hubStats && hubStats.stockoutInstances > 0;
+                  const hasStockout = (statsRef.current["kamloops"]?.stockoutInstances ?? 0) > 0;
                   return (
                     <Marker coordinates={CENTRAL_HUB_COORDS} onClick={() => toggle(hub)} style={{ cursor: "pointer" }}>
-                      <g transform={`translate(${-W / 2}, ${-H / 2})`} style={{ pointerEvents: "none" }}>
-                        <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
-                        <rect width={W} height={H} rx={7} fill="white" stroke={hasStockout ? "#ef4444" : "#0d9488"} strokeWidth={hasStockout ? 2.5 : 1.5} strokeOpacity={hasStockout ? 0.9 : 0.6} />
-                        <rect width={4} height={H} rx={2} fill={hasStockout ? "#ef4444" : "#0d9488"} />
-                        <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">CENTRAL HUB</text>
-                        <rect x={W - 46} y={5} width={38} height={14} rx={4} fill="#0d9488" fillOpacity={0.15} stroke="#0d9488" strokeWidth={1} strokeOpacity={0.4} />
-                        <text x={W - 27} y={14.5} textAnchor="middle" fontSize={7} fontWeight="700" fill="#0d9488" fontFamily="system-ui, sans-serif">◎ HUB</text>
-                        <text x={14} y={33} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Current Level</text>
-                        <text x={W - 10} y={33} textAnchor="end" fontSize={9} fontWeight="700" fill={fillColor} fontFamily="system-ui, sans-serif">{s.current.toLocaleString()} {s.unit}</text>
-                        <line x1={14} y1={39} x2={W - 10} y2={39} stroke="#f1f5f9" strokeWidth={1} />
-                        <circle cx={17.5} cy={51} r={3.5} fill="#fef3c7" stroke="#f59e0b" strokeWidth={1} />
-                        <text x={24} y={55} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Reorder Point</text>
-                        <text x={W - 10} y={55} textAnchor="end" fontSize={9} fontWeight="600" fill="#d97706" fontFamily="system-ui, sans-serif">{s.reorderPoint.toLocaleString()} {s.unit}</text>
-                        <circle cx={17.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
-                        <text x={24} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
-                        <text x={W - 10} y={73} textAnchor="end" fontSize={9} fontWeight="600" fill="#dc2626" fontFamily="system-ui, sans-serif">{s.safetyStock.toLocaleString()} {s.unit}</text>
-                        <g transform="translate(14, 84)">
-                          <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
-                          <rect width={Math.max(barW * fillPct, barH)} height={barH} rx={4} fill={fillColor} fillOpacity={0.8} />
-                          <line x1={barW * ropPct} y1={-3} x2={barW * ropPct} y2={barH + 3} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
-                          <line x1={barW * ssPct}  y1={-3} x2={barW * ssPct}  y2={barH + 3} stroke="#ef4444" strokeWidth={2} strokeLinecap="round" />
-                          <text x={barW * ropPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#d97706" fontWeight="600" fontFamily="system-ui, sans-serif">ROP</text>
-                          <text x={barW * ssPct}  y={barH + 13} textAnchor="middle" fontSize={7} fill="#dc2626" fontWeight="600" fontFamily="system-ui, sans-serif">SS</text>
-                        </g>
+                      <g transform={`translate(${-168 / 2}, ${-118 / 2})`} style={{ pointerEvents: "none" }}>
+                        <InventoryCard s={s} color="#0d9488" label="CENTRAL HUB" isCritical={hasStockout} />
+                        {!hasStockout && (
+                          <g>
+                            <rect x={168 - 46} y={5} width={38} height={14} rx={4} fill="#0d9488" fillOpacity={0.15} stroke="#0d9488" strokeWidth={1} strokeOpacity={0.4} />
+                            <text x={168 - 27} y={14.5} textAnchor="middle" fontSize={7} fontWeight="700" fill="#0d9488" fontFamily="system-ui, sans-serif">◎ HUB</text>
+                          </g>
+                        )}
                       </g>
                     </Marker>
                   );
                 })()}
-
-                {/* City pins (pooled) */}
                 {locations.map((loc) => {
-                  const isSelected = selected?.id === loc.id;
-                  const isHovered  = hovered === loc.id;
-                  const active     = isSelected || isHovered;
-                  const pinR       = active ? 18 : 13;
+                  const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
+                  const active = isSelected || isHovered, pinR = active ? 18 : 13;
                   return (
                     <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
                       onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
@@ -740,61 +901,68 @@ export function BCMap() {
                       <circle r={pinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
                       <circle r={pinR} fill={isSelected ? loc.color : "white"} stroke={loc.color} strokeWidth={2.5} />
                       <circle r={5} fill={isSelected ? "white" : loc.color} />
-                      <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700"
-                        fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
-                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5}
-                        fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
+                      <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700" fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
+                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5} fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
                     </Marker>
                   );
                 })}
               </>
-            ) : (
-              <>
-                <Line from={locations[0].coordinates} to={locations[1].coordinates} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" />
+            )}
 
+            {/* ── Scenario 3: partial SS centralisation ──────────────── */}
+            {isS3 && (
+              <>
+                {/* Lines from forward facilities to DC (emergency route) */}
+                <Line from={locations[0].coordinates} to={DC_S3_COORDS} stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="4 4" strokeLinecap="round" />
+                <Line from={locations[1].coordinates} to={DC_S3_COORDS} stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="4 4" strokeLinecap="round" />
+                {/* Direct supply line between warehouses */}
+                <Line from={locations[0].coordinates} to={locations[1].coordinates} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" strokeLinecap="round" />
+
+                {/* DC card */}
+                {(() => {
+                  const W = 156, H = 72;
+                  const dcPct    = dcInitialRef.current > 0 ? dcInventory / dcInitialRef.current : 0;
+                  const dcColor  = dcInventory <= 0 ? "#ef4444" : dcInventory < dcInitialRef.current * 0.3 ? "#f59e0b" : "#7c3aed";
+                  const barW = 128, barH = 9;
+                  return (
+                    <Marker coordinates={DC_S3_COORDS} style={{ cursor: "default" }}>
+                      <g transform={`translate(${-W / 2}, ${-H / 2})`} style={{ pointerEvents: "none" }}>
+                        <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
+                        <rect width={W} height={H} rx={7} fill="white" stroke="#7c3aed" strokeWidth={1.5} strokeOpacity={dcInventory <= 0 ? 0 : 0.5} />
+                        {dcInventory <= 0 && <rect width={W} height={H} rx={7} fill="white" stroke="#ef4444" strokeWidth={2} strokeOpacity={0.8} />}
+                        <rect width={4} height={H} rx={2} fill={dcInventory <= 0 ? "#ef4444" : "#7c3aed"} />
+                        <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">DISTRIBUTION CENTRE</text>
+                        <text x={14} y={30} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock Reserve</text>
+                        <text x={W - 10} y={30} textAnchor="end" fontSize={9} fontWeight="700" fill={dcColor} fontFamily="system-ui, sans-serif">{dcInventory.toLocaleString()} / {dcInitialRef.current} units</text>
+                        <g transform="translate(14, 40)">
+                          <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
+                          <rect width={Math.max(barW * dcPct, dcInventory > 0 ? barH : 0)} height={barH} rx={4} fill={dcColor} fillOpacity={0.75} />
+                          <text x={barW / 2} y={barH + 13} textAnchor="middle" fontSize={7} fill="#7c3aed" fontWeight="600" fontFamily="system-ui, sans-serif">
+                            {dcInventory <= 0 ? "DEPLETED" : `${Math.round(dcPct * 100)}% remaining`}
+                          </text>
+                        </g>
+                      </g>
+                    </Marker>
+                  );
+                })()}
+
+                {/* Forward facility pins with inventory cards */}
                 {locations.map((loc) => {
-                  const isSelected = selected?.id === loc.id;
-                  const isHovered  = hovered === loc.id;
-                  const active     = isSelected || isHovered;
-                  const c          = counts(loc);
-                  const s          = loc.stock;
-                  const W = 168, H = 118, barW = 138, barH = 9;
-                  const pinR       = active ? 18 : 13;
-                  const fillPct    = s.capacity > 0 ? s.current / s.capacity : 0;
-                  const ropPct     = s.capacity > 0 ? s.reorderPoint / s.capacity : 0;
-                  const ssPct      = s.capacity > 0 ? s.safetyStock / s.capacity : 0;
-                  const fillColor  = s.current <= s.safetyStock ? "#ef4444" : s.current <= s.reorderPoint ? "#f59e0b" : loc.color;
+                  const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
+                  const active = isSelected || isHovered;
+                  const c = counts(loc), s = loc.stock;
+                  const W = 168, H = 118;
+                  const pinR = active ? 18 : 13;
                   const gap    = 14;
                   const cardX  = loc.cardSide === "left" ? -(pinR + gap + W) : pinR + gap;
                   const cardY  = -H / 2;
                   const connX1 = loc.cardSide === "left" ? -pinR : pinR;
                   const connX2 = loc.cardSide === "left" ? -(pinR + gap) : pinR + gap;
-
                   return (
                     <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
                       onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
                       <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
-                        <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
-                        <rect width={W} height={H} rx={7} fill="white" stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.35} />
-                        <rect width={4} height={H} rx={2} fill={loc.color} />
-                        <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">INVENTORY STATUS</text>
-                        <text x={14} y={33} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Current Level</text>
-                        <text x={W - 10} y={33} textAnchor="end" fontSize={9} fontWeight="700" fill={fillColor} fontFamily="system-ui, sans-serif">{s.current.toLocaleString()} {s.unit}</text>
-                        <line x1={14} y1={39} x2={W - 10} y2={39} stroke="#f1f5f9" strokeWidth={1} />
-                        <circle cx={17.5} cy={51} r={3.5} fill="#fef3c7" stroke="#f59e0b" strokeWidth={1} />
-                        <text x={24} y={55} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Reorder Point</text>
-                        <text x={W - 10} y={55} textAnchor="end" fontSize={9} fontWeight="600" fill="#d97706" fontFamily="system-ui, sans-serif">{s.reorderPoint.toLocaleString()} {s.unit}</text>
-                        <circle cx={17.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
-                        <text x={24} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
-                        <text x={W - 10} y={73} textAnchor="end" fontSize={9} fontWeight="600" fill="#dc2626" fontFamily="system-ui, sans-serif">{s.safetyStock.toLocaleString()} {s.unit}</text>
-                        <g transform="translate(14, 84)">
-                          <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
-                          <rect width={Math.max(barW * fillPct, barH)} height={barH} rx={4} fill={fillColor} fillOpacity={0.8} />
-                          <line x1={barW * ropPct} y1={-3} x2={barW * ropPct} y2={barH + 3} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
-                          <line x1={barW * ssPct}  y1={-3} x2={barW * ssPct}  y2={barH + 3} stroke="#ef4444" strokeWidth={2} strokeLinecap="round" />
-                          <text x={barW * ropPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#d97706" fontWeight="600" fontFamily="system-ui, sans-serif">ROP</text>
-                          <text x={barW * ssPct}  y={barH + 13} textAnchor="middle" fontSize={7} fill="#dc2626" fontWeight="600" fontFamily="system-ui, sans-serif">SS</text>
-                        </g>
+                        <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS" />
                       </g>
                       <line x1={connX1} y1={0} x2={connX2} y2={0} stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2" style={{ pointerEvents: "none" }} />
                       {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
@@ -807,15 +975,54 @@ export function BCMap() {
                           <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8} fontWeight="800">{c.critical}</text>
                         </g>
                       )}
-                      <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700"
-                        fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
-                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5}
-                        fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
+                      <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700" fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
+                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5} fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
                     </Marker>
                   );
                 })}
               </>
             )}
+
+            {/* ── Scenario 1: independent ─────────────────────────────── */}
+            {!isPooled && !isS3 && (
+              <>
+                <Line from={locations[0].coordinates} to={locations[1].coordinates} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" />
+                {locations.map((loc) => {
+                  const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
+                  const active = isSelected || isHovered;
+                  const c = counts(loc), s = loc.stock;
+                  const W = 168, H = 118;
+                  const pinR = active ? 18 : 13;
+                  const gap    = 14;
+                  const cardX  = loc.cardSide === "left" ? -(pinR + gap + W) : pinR + gap;
+                  const cardY  = -H / 2;
+                  const connX1 = loc.cardSide === "left" ? -pinR : pinR;
+                  const connX2 = loc.cardSide === "left" ? -(pinR + gap) : pinR + gap;
+                  return (
+                    <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
+                      onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
+                      <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
+                        <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS" />
+                      </g>
+                      <line x1={connX1} y1={0} x2={connX2} y2={0} stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2" style={{ pointerEvents: "none" }} />
+                      {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
+                      <circle r={pinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
+                      <circle r={pinR} fill={isSelected ? loc.color : "white"} stroke={loc.color} strokeWidth={2.5} />
+                      <circle r={5} fill={isSelected ? "white" : loc.color} />
+                      {c.critical > 0 && (
+                        <g transform={`translate(${active ? 16 : 11}, ${active ? -16 : -11})`}>
+                          <circle r={7} fill="#ef4444" stroke="white" strokeWidth={1.5} />
+                          <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8} fontWeight="800">{c.critical}</text>
+                        </g>
+                      )}
+                      <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700" fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
+                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5} fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
+                    </Marker>
+                  );
+                })}
+              </>
+            )}
+
           </ZoomableGroup>
         </ComposableMap>
       </div>
@@ -838,6 +1045,13 @@ export function BCMap() {
               <span className="text-slate-400">— {loc.warehouseSize}</span>
             </div>
           ))}
+          {isS3 && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-violet-600" />
+              <span className="text-slate-600 font-medium">DC</span>
+              <span className="text-slate-400">— {ssDC} SS units</span>
+            </div>
+          )}
         </div>
         <div className="border-t border-slate-100 pt-3">
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Stock Status</p>
@@ -860,13 +1074,24 @@ export function BCMap() {
           </div>
         </div>
         <div className="border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-1.5">
             <svg width="20" height="6" viewBox="0 0 20 6">
-              <line x1="0" y1="3" x2="20" y2="3" stroke={isPooled ? "#0d9488" : "#94a3b8"} strokeWidth="1.5" strokeDasharray={isPooled ? "6 3" : "4 3"} strokeLinecap="round" />
+              <line x1="0" y1="3" x2="20" y2="3"
+                stroke={isPooled ? "#0d9488" : isS3 ? "#7c3aed" : "#94a3b8"}
+                strokeWidth="1.5"
+                strokeDasharray={isPooled ? "6 3" : isS3 ? "4 4" : "4 3"}
+                strokeLinecap="round" />
             </svg>
-            <span className="text-slate-500">{isPooled ? "Central supply flow" : "Supply route"}</span>
+            <span className="text-slate-500">{isPooled ? "Central supply flow" : isS3 ? "DC emergency route" : "Supply route"}</span>
           </div>
         </div>
+        {isS3 && (
+          <div className="border-t border-slate-100 pt-3 text-[10px] text-slate-500 space-y-0.5">
+            <div className="font-semibold text-slate-400 uppercase tracking-widest mb-1">SS Split</div>
+            <div>Forward (each): <span className="font-semibold text-slate-700">{ssRCur}</span> units</div>
+            <div>DC pool: <span className="font-semibold text-violet-700">{ssDC}</span> units</div>
+          </div>
+        )}
         <div className="border-t border-slate-100 pt-3 text-[10px] text-slate-400 space-y-0.5">
           <div>Q={SIM_Q} · SS={SIM_SS} · LT={SIM_LT}h · d̄={SIM_D}/hr</div>
           <div>ROP={SIM_ROP} · Init={SIM_INIT} · {SIM_HOURS}h sim</div>
@@ -924,7 +1149,7 @@ export function BCMap() {
             return (
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 shrink-0">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Live Stats</p>
-                <div className="grid grid-cols-4 gap-2 text-center">
+                <div className={`grid gap-2 text-center ${isS3 ? "grid-cols-5" : "grid-cols-4"}`}>
                   <div>
                     <p className="text-[10px] text-slate-400">Stockouts</p>
                     <p className={`text-sm font-bold ${st.stockoutInstances > 0 ? "text-red-600" : "text-slate-700"}`}>{st.stockoutInstances}</p>
@@ -941,6 +1166,12 @@ export function BCMap() {
                     <p className="text-[10px] text-slate-400">Svc Level</p>
                     <p className={`text-sm font-bold ${st.stockoutInstances > 0 ? "text-amber-600" : "text-green-600"}`}>{svcLevel}%</p>
                   </div>
+                  {isS3 && (
+                    <div>
+                      <p className="text-[10px] text-violet-400">From DC</p>
+                      <p className="text-sm font-bold text-violet-700">{st.demandServedFromDC}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -988,7 +1219,14 @@ export function BCMap() {
 
       {/* ── Results Modal ─────────────────────────────────────────── */}
       {showResults && (
-        <ResultsModal locations={locations} results={resultsData} isPooled={isPooled} onClose={() => setShowResults(false)} />
+        <ResultsModal
+          locations={locations}
+          results={resultsData}
+          isPooled={isPooled}
+          isS3={isS3}
+          dcInitial={dcInitialRef.current}
+          onClose={() => setShowResults(false)}
+        />
       )}
     </div>
   );
