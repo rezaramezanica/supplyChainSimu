@@ -22,8 +22,16 @@ const SIM_INIT  = SIM_Q + SIM_SS;             // = 1100
 const SIM_CAP   = SIM_INIT;                    // visual capacity = starting inventory (bar full at reset)
 const SIM_HOURS = 2920;                        // 365 * 8
 
+const WORLD_GEO        = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 const CANADA_GEO       = "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
 const US_GEO           = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
+
+const COUNTRY_LABELS: { name: string; coords: [number, number] }[] = [
+  { name: "CANADA",        coords: [-115.0, 58.0] },
+  { name: "UNITED STATES", coords: [-98.5,  39.0] },
+  { name: "MEXICO",        coords: [-102.5, 24.0] },
+  { name: "ALASKA",        coords: [-153.0, 64.5] },
+];
 const CENTRAL_HUB_COORDS: [number, number] = [-119.91, 50.28]; // S2 hub
 const DC_S3_COORDS:       [number, number] = [-120.786, 50.111]; // S3 DC — Merritt, BC
 
@@ -704,7 +712,7 @@ export function BCMap() {
   };
 
   const zoomIn    = () => setZoom((z) => Math.min(z * 1.5, 12));
-  const zoomOut   = () => setZoom((z) => Math.max(z / 1.5, 0.5));
+  const zoomOut   = () => setZoom((z) => Math.max(z / 1.5, 0.15));
   const resetView = () => { setZoom(1); setCenter([-119.8, 50.35]); };
 
   const isPooled = activeScenario === 2;
@@ -820,9 +828,17 @@ export function BCMap() {
       )}
 
       {/* ── Map ──────────────────────────────────────────────────────── */}
-      <div className="absolute inset-0 top-14">
+      <div className="absolute inset-0 top-20">
         <ComposableMap projection="geoMercator" projectionConfig={{ center: [-119.8, 50.35], scale: 4400 }} style={{ width: "100%", height: "100%" }}>
           <ZoomableGroup zoom={zoom} center={center} onMoveEnd={({ zoom: z, coordinates }) => { setZoom(z); setCenter(coordinates); }}>
+
+            {/* World base layer */}
+            <Geographies geography={WORLD_GEO}>
+              {({ geographies }) => geographies.map((geo) => (
+                <Geography key={geo.rsmKey} geography={geo} fill="#e8ecf0" stroke="#d0d7e0" strokeWidth={0.3}
+                  style={{ default: { outline: "none" }, hover: { outline: "none" }, pressed: { outline: "none" } }} />
+              ))}
+            </Geographies>
 
             <Geographies geography={US_GEO}>
               {({ geographies }) => geographies.map((geo) => (
@@ -842,6 +858,18 @@ export function BCMap() {
                 );
               })}
             </Geographies>
+
+            {/* Country labels — rendered on top of geography fills */}
+            {zoom < 1.5 && COUNTRY_LABELS.map(({ name, coords }) => (
+              <Marker key={name} coordinates={coords}>
+                <text textAnchor="middle" fill="#94a3b8"
+                  fontSize={10 / zoom} fontFamily="system-ui, sans-serif"
+                  fontWeight="700" letterSpacing="0.12em"
+                  style={{ pointerEvents: "none", userSelect: "none" }}>
+                  {name}
+                </text>
+              </Marker>
+            ))}
 
             {/* ── Scenario 2: pooled central hub ─────────────────────── */}
             {isPooled && (
