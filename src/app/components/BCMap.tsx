@@ -433,11 +433,12 @@ function ResultsModal({
 
 // ─── Inventory card SVG (reused for all scenarios) ────────────────────────────
 
-function InventoryCard({ s, color, label, isCritical }: {
+function InventoryCard({ s, color, label, isCritical, stockouts, demandLost }: {
   s: StockMetrics; color: string; label: string; isCritical?: boolean;
+  stockouts?: number; demandLost?: number;
 }) {
-  const W = 168, H = 118;
-  const barVW = 10, barVH = 85, barX = 6, barY = 16;
+  const W = 168, H = 142;
+  const barVW = 10, barVH = 112, barX = 6, barY = 16;
   const fillPct  = s.capacity > 0 ? Math.min(s.current / s.capacity, 1) : 0;
   const ropPct   = s.capacity > 0 ? Math.min(s.reorderPoint / s.capacity, 1) : 0;
   const ssPct    = s.capacity > 0 ? Math.min(s.safetyStock  / s.capacity, 1) : 0;
@@ -448,6 +449,8 @@ function InventoryCard({ s, color, label, isCritical }: {
   const minLabelGap = 10;
   const ropLabelY = ropY;
   const ssLabelY  = ssY - ropY < minLabelGap ? ropY + minLabelGap : ssY;
+  const so = stockouts ?? 0;
+  const dl = demandLost ?? 0;
   return (
     <g>
       <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
@@ -462,6 +465,13 @@ function InventoryCard({ s, color, label, isCritical }: {
       <circle cx={31.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
       <text x={38} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
       <text x={W - 10} y={73} textAnchor="end" fontSize={9} fontWeight="600" fill="#dc2626" fontFamily="system-ui, sans-serif">{s.safetyStock.toLocaleString()} {s.unit}</text>
+      <line x1={28} y1={80} x2={W - 10} y2={80} stroke="#f1f5f9" strokeWidth={1} />
+      <circle cx={31.5} cy={90} r={3.5} fill={so > 0 ? "#fee2e2" : "#f8fafc"} stroke={so > 0 ? "#ef4444" : "#cbd5e1"} strokeWidth={1} />
+      <text x={38} y={94} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Stockouts</text>
+      <text x={W - 10} y={94} textAnchor="end" fontSize={9} fontWeight="700" fill={so > 0 ? "#dc2626" : "#94a3b8"} fontFamily="system-ui, sans-serif">{so}</text>
+      <circle cx={31.5} cy={108} r={3.5} fill={dl > 0 ? "#fef3c7" : "#f8fafc"} stroke={dl > 0 ? "#f59e0b" : "#cbd5e1"} strokeWidth={1} />
+      <text x={38} y={112} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Demand Lost</text>
+      <text x={W - 10} y={112} textAnchor="end" fontSize={9} fontWeight="700" fill={dl > 0 ? "#d97706" : "#94a3b8"} fontFamily="system-ui, sans-serif">{dl.toLocaleString()} {s.unit}</text>
       {/* Vertical inventory bar on left */}
       <g transform={`translate(${barX}, ${barY})`}>
         <rect width={barVW} height={barVH} rx={3} fill="#f1f5f9" />
@@ -887,7 +897,7 @@ export function BCMap() {
                 {(() => {
                   const hub = locations[0]; const s = hub.stock;
                   const hasStockout = (statsRef.current["kamloops"]?.stockoutInstances ?? 0) > 0;
-                  const W = 168, H = 118, pinR = 13;
+                  const W = 168, H = 142, pinR = 13;
                   const cardTop = -(H + 80); // above hub pin, clear of both city pins
                   return (
                     <Marker coordinates={CENTRAL_HUB_COORDS} onClick={() => toggle(hub)} style={{ cursor: "pointer" }}>
@@ -902,7 +912,9 @@ export function BCMap() {
                         fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>Hub</text>
                       {/* inventory card above pin */}
                       <g transform={`translate(${-W / 2}, ${cardTop})`} style={{ pointerEvents: "none" }}>
-                        <InventoryCard s={s} color="#0d9488" label="CENTRAL HUB" isCritical={hasStockout} />
+                        <InventoryCard s={s} color="#0d9488" label="CENTRAL HUB" isCritical={hasStockout}
+                          stockouts={statsRef.current["kamloops"]?.stockoutInstances}
+                          demandLost={statsRef.current["kamloops"]?.demandLost} />
                         {!hasStockout && (
                           <g>
                             <rect x={W - 46} y={5} width={38} height={14} rx={4} fill="#0d9488" fillOpacity={0.15} stroke="#0d9488" strokeWidth={1} strokeOpacity={0.4} />
@@ -992,7 +1004,7 @@ export function BCMap() {
                   const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
                   const active = isSelected || isHovered;
                   const c = counts(loc), s = loc.stock;
-                  const W = 168, H = 118;
+                  const W = 168, H = 142;
                   const pinR = active ? 18 : 13;
                   const gap    = 14;
                   const cardX  = loc.cardSide === "left" ? -(pinR + gap + W) : pinR + gap;
@@ -1003,7 +1015,9 @@ export function BCMap() {
                     <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
                       onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
                       <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
-                        <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS" />
+                        <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS"
+                          stockouts={statsRef.current[loc.id]?.stockoutInstances}
+                          demandLost={statsRef.current[loc.id]?.demandLost} />
                       </g>
                       <line x1={connX1} y1={0} x2={connX2} y2={0} stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2" style={{ pointerEvents: "none" }} />
                       {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
@@ -1032,7 +1046,7 @@ export function BCMap() {
                   const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
                   const active = isSelected || isHovered;
                   const c = counts(loc), s = loc.stock;
-                  const W = 168, H = 118;
+                  const W = 168, H = 142;
                   const pinR = active ? 18 : 13;
                   const gap    = 14;
                   const cardX  = loc.cardSide === "left" ? -(pinR + gap + W) : pinR + gap;
@@ -1043,7 +1057,9 @@ export function BCMap() {
                     <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
                       onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
                       <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
-                        <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS" />
+                        <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS"
+                          stockouts={statsRef.current[loc.id]?.stockoutInstances}
+                          demandLost={statsRef.current[loc.id]?.demandLost} />
                       </g>
                       <line x1={connX1} y1={0} x2={connX2} y2={0} stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2" style={{ pointerEvents: "none" }} />
                       {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
