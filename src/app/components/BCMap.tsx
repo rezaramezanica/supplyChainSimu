@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import truLogo from "../../../tru_logo.png";
 import {
   ComposableMap, Geographies, Geography, Marker, Line, ZoomableGroup,
 } from "react-simple-maps";
@@ -6,7 +7,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid,
 } from "recharts";
 import {
-  X, Warehouse, Plus, Minus, RotateCcw, Play, Pause, AlertTriangle,
+  X, Plus, Minus, RotateCcw, Play, Pause, AlertTriangle,
 } from "lucide-react";
 
 // ─── Simulation constants (from spec) ─────────────────────────────────────────
@@ -715,17 +716,11 @@ export function BCMap() {
     <div className="relative w-full h-full bg-slate-100 overflow-hidden font-sans">
 
       {/* ── Top bar ───────────────────────────────────────────────── */}
-      <header className="absolute top-0 left-0 right-0 z-20 h-14 flex items-center justify-between px-5 bg-white border-b border-slate-200 shadow-sm gap-3 relative">
+      <header className="absolute top-0 left-0 right-0 z-20 h-20 flex items-center justify-between px-5 bg-white border-b border-slate-200 shadow-sm gap-3 relative">
 
         {/* Left */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0">
-            <Warehouse className="w-4 h-4 text-white" />
-          </div>
-          <div className="leading-none">
-            <p className="text-sm font-semibold text-slate-900">BC Inventory Network</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">British Columbia · 2 warehouse locations</p>
-          </div>
+        <div className="flex items-center shrink-0">
+          <img src={truLogo} alt="TRU Logo" className="h-[72px] w-auto shrink-0" />
         </div>
 
         {/* Center: scenario tabs — absolutely centered so it never shifts */}
