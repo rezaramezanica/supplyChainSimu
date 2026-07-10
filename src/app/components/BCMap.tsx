@@ -13,13 +13,13 @@ import {
 // ─── Simulation constants (from spec) ─────────────────────────────────────────
 
 const SIM_Q     = 1000;
-const SIM_SS    = 50;                          // safety stock per region (baseline)
+const SIM_SS    = 100;                         // safety stock per region (baseline)
 const SIM_LT    = 16;                          // lead time in hours
 const SIM_D     = 5;                           // average hourly demand per region
 const SIM_STD   = 2;
 const SIM_ROP   = 200;                         // reorder point per region
 const SIM_INIT  = SIM_Q + SIM_SS;             // = 1100
-const SIM_CAP   = SIM_Q * 3;                  // visual capacity bar
+const SIM_CAP   = SIM_INIT;                    // visual capacity = starting inventory (bar full at reset)
 const SIM_HOURS = 2920;                        // 365 * 8
 
 const CANADA_GEO       = "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
