@@ -6,8 +6,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid,
 } from "recharts";
 import {
-  Package, MapPin, X, TrendingUp, AlertCircle, CheckCircle,
-  Warehouse, Plus, Minus, RotateCcw, Play, Pause, AlertTriangle,
+  X, Warehouse, Plus, Minus, RotateCcw, Play, Pause, AlertTriangle,
 } from "lucide-react";
 
 // ─── Simulation constants (from spec) ─────────────────────────────────────────
@@ -178,19 +177,7 @@ function deriveItemStatus(qty: number, maxQty: number): "healthy" | "low" | "cri
   return "healthy";
 }
 
-const statusConfig = {
-  healthy:  { color: "text-green-600", bg: "bg-green-50",  border: "border-green-100",  label: "Healthy",   dot: "bg-green-500" },
-  low:      { color: "text-amber-600", bg: "bg-amber-50",  border: "border-amber-100",  label: "Low Stock", dot: "bg-amber-500" },
-  critical: { color: "text-red-600",   bg: "bg-red-50",    border: "border-red-100",    label: "Critical",  dot: "bg-red-500" },
-};
 
-function counts(loc: LocationData) {
-  return {
-    healthy:  loc.inventory.filter((i) => i.status === "healthy").length,
-    low:      loc.inventory.filter((i) => i.status === "low").length,
-    critical: loc.inventory.filter((i) => i.status === "critical").length,
-  };
-}
 
 function nowStr() { return new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" }); }
 
@@ -494,7 +481,6 @@ export function BCMap() {
   const [activeScenario, setActiveScenario]     = useState<ScenarioId>(1);
   const [centralSSPct, setCentralSSPct]         = useState(50);   // S3 slider: % of SS at DC
   const [locations, setLocations]               = useState<LocationData[]>(getScenarioLocations(1));
-  const [selected, setSelected]                 = useState<LocationData | null>(null);
   const [hovered, setHovered]                   = useState<string | null>(null);
   const [zoom, setZoom]                         = useState(1);
   const [center, setCenter]                     = useState<[number, number]>([-119.8, 50.35]);
@@ -542,7 +528,6 @@ export function BCMap() {
     setCurrentHour(0);
     setDcInventory(dcInvRef.current);
     setLocations(getScenarioLocations(scenario, pct));
-    setSelected(null);
   };
 
   const handleScenarioChange = (s: ScenarioId) => {
@@ -556,14 +541,6 @@ export function BCMap() {
     setCentralSSPct(pct);
     resetAll(3, pct);
   };
-
-  // Sync detail panel
-  useEffect(() => {
-    if (selected) {
-      const updated = locations.find((l) => l.id === selected.id);
-      if (updated) setSelected(updated);
-    }
-  }, [locations]);
 
   // ── Simulation loop ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -725,7 +702,6 @@ export function BCMap() {
     }
   };
 
-  const toggle    = (loc: LocationData) => setSelected((prev) => (prev?.id === loc.id ? null : loc));
   const zoomIn    = () => setZoom((z) => Math.min(z * 1.5, 12));
   const zoomOut   = () => setZoom((z) => Math.max(z / 1.5, 0.5));
   const resetView = () => { setZoom(1); setCenter([-119.8, 50.35]); };
@@ -734,8 +710,6 @@ export function BCMap() {
   const isS3     = activeScenario === 3;
   const hourOfDay = currentHour % 8;
 
-  // S3 derived params for display
-  const { ssDC, ssR: ssRCur } = s3Params(centralSSPct);
 
   return (
     <div className="relative w-full h-full bg-slate-100 overflow-hidden font-sans">
@@ -818,21 +792,6 @@ export function BCMap() {
             </span>
           </div>
 
-          {/* Location pills */}
-          {locations.map((loc) => {
-            const c = counts(loc); const active = selected?.id === loc.id;
-            return (
-              <button key={loc.id} onClick={() => toggle(loc)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
-                style={{ borderColor: active ? loc.color : "#e2e8f0", backgroundColor: active ? loc.accent : "#f8fafc", color: active ? loc.color : "#64748b" }}
-              >
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: loc.color }} />
-                {loc.name}
-                {c.critical > 0 && <span className="ml-0.5 bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{c.critical}</span>}
-              </button>
-            );
-          })}
-
           {/* Play/Pause */}
           <button onClick={handlePlayPause}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all"
@@ -900,7 +859,7 @@ export function BCMap() {
                   const W = 168, H = 142, pinR = 13;
                   const cardTop = -(H + 80); // above hub pin, clear of both city pins
                   return (
-                    <Marker coordinates={CENTRAL_HUB_COORDS} onClick={() => toggle(hub)} style={{ cursor: "pointer" }}>
+                    <Marker coordinates={CENTRAL_HUB_COORDS} style={{ cursor: "default" }}>
                       {/* vertical connector from pin top to card bottom */}
                       <line x1={0} y1={-pinR} x2={0} y2={cardTop + H}
                         stroke="#0d9488" strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2"
@@ -926,17 +885,16 @@ export function BCMap() {
                   );
                 })()}
                 {locations.map((loc) => {
-                  const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
-                  const active = isSelected || isHovered, pinR = active ? 18 : 13;
+                  const active = hovered === loc.id;
+                  const pinR = active ? 18 : 13;
                   return (
-                    <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
-                      onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
+                    <Marker key={loc.id} coordinates={loc.coordinates}
+                      onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "default" }}>
                       {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
                       <circle r={pinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
-                      <circle r={pinR} fill={isSelected ? loc.color : "white"} stroke={loc.color} strokeWidth={2.5} />
-                      <circle r={5} fill={isSelected ? "white" : loc.color} />
+                      <circle r={pinR} fill="white" stroke={loc.color} strokeWidth={2.5} />
+                      <circle r={5} fill={loc.color} />
                       <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700" fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
-                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5} fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
                     </Marker>
                   );
                 })}
@@ -1001,9 +959,8 @@ export function BCMap() {
 
                 {/* Forward facility pins with inventory cards */}
                 {locations.map((loc) => {
-                  const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
-                  const active = isSelected || isHovered;
-                  const c = counts(loc), s = loc.stock;
+                  const active = hovered === loc.id;
+                  const s = loc.stock;
                   const W = 168, H = 142;
                   const pinR = active ? 18 : 13;
                   const gap    = 14;
@@ -1012,8 +969,8 @@ export function BCMap() {
                   const connX1 = loc.cardSide === "left" ? -pinR : pinR;
                   const connX2 = loc.cardSide === "left" ? -(pinR + gap) : pinR + gap;
                   return (
-                    <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
-                      onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
+                    <Marker key={loc.id} coordinates={loc.coordinates}
+                      onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "default" }}>
                       <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
                         <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS"
                           stockouts={statsRef.current[loc.id]?.stockoutInstances}
@@ -1022,16 +979,9 @@ export function BCMap() {
                       <line x1={connX1} y1={0} x2={connX2} y2={0} stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2" style={{ pointerEvents: "none" }} />
                       {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
                       <circle r={pinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
-                      <circle r={pinR} fill={isSelected ? loc.color : "white"} stroke={loc.color} strokeWidth={2.5} />
-                      <circle r={5} fill={isSelected ? "white" : loc.color} />
-                      {c.critical > 0 && (
-                        <g transform={`translate(${active ? 16 : 11}, ${active ? -16 : -11})`}>
-                          <circle r={7} fill="#ef4444" stroke="white" strokeWidth={1.5} />
-                          <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8} fontWeight="800">{c.critical}</text>
-                        </g>
-                      )}
+                      <circle r={pinR} fill="white" stroke={loc.color} strokeWidth={2.5} />
+                      <circle r={5} fill={loc.color} />
                       <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700" fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
-                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5} fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
                     </Marker>
                   );
                 })}
@@ -1043,9 +993,8 @@ export function BCMap() {
               <>
                 <Line from={locations[0].coordinates} to={locations[1].coordinates} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 4" strokeLinecap="round" />
                 {locations.map((loc) => {
-                  const isSelected = selected?.id === loc.id, isHovered = hovered === loc.id;
-                  const active = isSelected || isHovered;
-                  const c = counts(loc), s = loc.stock;
+                  const active = hovered === loc.id;
+                  const s = loc.stock;
                   const W = 168, H = 142;
                   const pinR = active ? 18 : 13;
                   const gap    = 14;
@@ -1054,8 +1003,8 @@ export function BCMap() {
                   const connX1 = loc.cardSide === "left" ? -pinR : pinR;
                   const connX2 = loc.cardSide === "left" ? -(pinR + gap) : pinR + gap;
                   return (
-                    <Marker key={loc.id} coordinates={loc.coordinates} onClick={() => toggle(loc)}
-                      onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "pointer" }}>
+                    <Marker key={loc.id} coordinates={loc.coordinates}
+                      onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "default" }}>
                       <g transform={`translate(${cardX}, ${cardY})`} style={{ pointerEvents: "none" }}>
                         <InventoryCard s={s} color={loc.color} label="INVENTORY STATUS"
                           stockouts={statsRef.current[loc.id]?.stockoutInstances}
@@ -1064,16 +1013,9 @@ export function BCMap() {
                       <line x1={connX1} y1={0} x2={connX2} y2={0} stroke={loc.color} strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2" style={{ pointerEvents: "none" }} />
                       {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
                       <circle r={pinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
-                      <circle r={pinR} fill={isSelected ? loc.color : "white"} stroke={loc.color} strokeWidth={2.5} />
-                      <circle r={5} fill={isSelected ? "white" : loc.color} />
-                      {c.critical > 0 && (
-                        <g transform={`translate(${active ? 16 : 11}, ${active ? -16 : -11})`}>
-                          <circle r={7} fill="#ef4444" stroke="white" strokeWidth={1.5} />
-                          <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize={8} fontWeight="800">{c.critical}</text>
-                        </g>
-                      )}
+                      <circle r={pinR} fill="white" stroke={loc.color} strokeWidth={2.5} />
+                      <circle r={5} fill={loc.color} />
                       <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700" fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.name}</text>
-                      {active && <text textAnchor="middle" y={47} fill="#64748b" fontSize={9.5} fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>{loc.totalSkus} SKUs · {loc.totalValue}</text>}
                     </Marker>
                   );
                 })}
@@ -1091,188 +1033,6 @@ export function BCMap() {
         <button onClick={resetView} className="w-9 h-9 bg-white border border-slate-200 rounded-lg shadow-sm flex items-center justify-center text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors" title="Reset view"><RotateCcw className="w-3.5 h-3.5" /></button>
       </div>
 
-      {/* ── Legend ────────────────────────────────────────────────── */}
-      <div className="absolute bottom-5 left-5 z-10 bg-white rounded-xl border border-slate-200 shadow-sm p-3.5 text-xs space-y-3">
-        <div>
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Locations</p>
-          {locations.map((loc) => (
-            <div key={loc.id} className="flex items-center gap-2 mb-1.5 last:mb-0">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: loc.color }} />
-              <span className="text-slate-600 font-medium">{loc.name}</span>
-              <span className="text-slate-400">— {loc.warehouseSize}</span>
-            </div>
-          ))}
-          {isS3 && (
-            <div className="flex items-center gap-2 mt-1.5">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-violet-600" />
-              <span className="text-slate-600 font-medium">DC</span>
-              <span className="text-slate-400">— {ssDC} SS units</span>
-            </div>
-          )}
-        </div>
-        <div className="border-t border-slate-100 pt-3">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Stock Status</p>
-          {(["healthy", "low", "critical"] as const).map((s) => (
-            <div key={s} className="flex items-center gap-2 mb-1.5 last:mb-0">
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${statusConfig[s].dot}`} />
-              <span className="text-slate-600">{statusConfig[s].label}</span>
-            </div>
-          ))}
-        </div>
-        <div className="border-t border-slate-100 pt-3">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Stock Bar</p>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="w-0.5 h-3.5 bg-amber-400 rounded-full shrink-0" />
-            <span className="text-slate-500">ROP — Reorder Point</span>
-          </div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="w-0.5 h-3.5 bg-red-400 rounded-full shrink-0" />
-            <span className="text-slate-500">SS — Safety Stock</span>
-          </div>
-        </div>
-        <div className="border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-2 mb-1.5">
-            <svg width="20" height="6" viewBox="0 0 20 6">
-              <line x1="0" y1="3" x2="20" y2="3"
-                stroke={isPooled ? "#0d9488" : isS3 ? "#7c3aed" : "#94a3b8"}
-                strokeWidth="1.5"
-                strokeDasharray={isPooled ? "6 3" : isS3 ? "4 4" : "4 3"}
-                strokeLinecap="round" />
-            </svg>
-            <span className="text-slate-500">{isPooled ? "Central supply flow" : isS3 ? "DC emergency route" : "Supply route"}</span>
-          </div>
-        </div>
-        {isS3 && (
-          <div className="border-t border-slate-100 pt-3 text-[10px] text-slate-500 space-y-0.5">
-            <div className="font-semibold text-slate-400 uppercase tracking-widest mb-1">SS Split</div>
-            <div>Forward (each): <span className="font-semibold text-slate-700">{ssRCur}</span> units</div>
-            <div>DC pool: <span className="font-semibold text-violet-700">{ssDC}</span> units</div>
-          </div>
-        )}
-        <div className="border-t border-slate-100 pt-3 text-[10px] text-slate-400 space-y-0.5">
-          <div>Q={SIM_Q} · SS={SIM_SS} · LT={SIM_LT}h · d̄={SIM_D}/hr</div>
-          <div>ROP={SIM_ROP} · Init={SIM_INIT} · {SIM_HOURS}h sim</div>
-        </div>
-      </div>
-
-      {/* ── Detail panel ──────────────────────────────────────────── */}
-      {selected && (
-        <div key={selected.id} className="absolute top-[68px] right-4 bottom-4 z-20 w-[390px] bg-white rounded-2xl border border-slate-200 shadow-xl flex flex-col overflow-hidden">
-          <div className="p-5 shrink-0" style={{ backgroundColor: selected.accent }}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <MapPin className="w-4 h-4 shrink-0" style={{ color: selected.color }} />
-                  <h2 className="text-base font-bold text-slate-900 truncate">
-                    {selected.name} {isPooled && selected.id !== locations[0].id ? "Service Area" : "Warehouse"}
-                  </h2>
-                </div>
-                <p className="text-xs text-slate-500 ml-6">{selected.address}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="shrink-0 w-7 h-7 rounded-lg bg-white/80 hover:bg-white flex items-center justify-center transition-colors border border-white/50">
-                <X className="w-3.5 h-3.5 text-slate-500" />
-              </button>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {[
-                { label: "Total SKUs", value: selected.totalSkus.toLocaleString() },
-                { label: "Est. Value",  value: selected.totalValue },
-                { label: "Footprint",  value: selected.warehouseSize },
-              ].map((s) => (
-                <div key={s.label} className="bg-white/60 rounded-lg px-3 py-2 backdrop-blur-sm">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-wide leading-none">{s.label}</p>
-                  <p className="text-sm font-bold text-slate-900 mt-1 leading-none">{s.value}</p>
-                </div>
-              ))}
-            </div>
-            {(() => {
-              const c = counts(selected);
-              return (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {c.critical > 0 && <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 px-2.5 py-1 rounded-full text-[11px] font-semibold"><AlertCircle className="w-3 h-3" />{c.critical} Critical</span>}
-                  {c.low > 0      && <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[11px] font-semibold"><TrendingUp className="w-3 h-3" />{c.low} Low Stock</span>}
-                  <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2.5 py-1 rounded-full text-[11px] font-semibold"><CheckCircle className="w-3 h-3" />{c.healthy} Healthy</span>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Live simulation stats */}
-          {currentHour > 0 && (() => {
-            const st = statsRef.current[selected.id];
-            if (!st) return null;
-            const fillRate = st.totalDemand > 0 ? ((1 - st.demandLost / st.totalDemand) * 100).toFixed(1) : "100.0";
-            const svcLevel = st.replenishmentOrders > 0 ? ((1 - st.stockoutInstances / st.replenishmentOrders) * 100).toFixed(1) : "100.0";
-            return (
-              <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 shrink-0">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Live Stats</p>
-                <div className={`grid gap-2 text-center ${isS3 ? "grid-cols-5" : "grid-cols-4"}`}>
-                  <div>
-                    <p className="text-[10px] text-slate-400">Stockouts</p>
-                    <p className={`text-sm font-bold ${st.stockoutInstances > 0 ? "text-red-600" : "text-slate-700"}`}>{st.stockoutInstances}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">Rep. Orders</p>
-                    <p className="text-sm font-bold text-slate-700">{st.replenishmentOrders}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">Fill Rate</p>
-                    <p className={`text-sm font-bold ${st.demandLost > 0 ? "text-amber-600" : "text-green-600"}`}>{fillRate}%</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400">Svc Level</p>
-                    <p className={`text-sm font-bold ${st.stockoutInstances > 0 ? "text-amber-600" : "text-green-600"}`}>{svcLevel}%</p>
-                  </div>
-                  {isS3 && (
-                    <div>
-                      <p className="text-[10px] text-violet-400">From DC</p>
-                      <p className="text-sm font-bold text-violet-700">{st.demandServedFromDC}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          <div className="px-5 py-2.5 border-b border-slate-100 flex items-center gap-5 text-xs text-slate-500 shrink-0 bg-slate-50/60">
-            <span><span className="font-medium text-slate-700">Manager: </span>{selected.manager}</span>
-            <span><span className="font-medium text-slate-700">Tel: </span>{selected.phone}</span>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            <div className="px-5 py-2.5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Inventory</p>
-              <p className="text-xs text-slate-400">{selected.inventory.length} categories</p>
-            </div>
-            <div className="divide-y divide-slate-50">
-              {selected.inventory.map((item) => {
-                const cfg = statusConfig[item.status];
-                return (
-                  <div key={item.sku} className="px-5 py-3 hover:bg-slate-50/70 transition-colors">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-800 truncate leading-snug">{item.category}</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">SKU {item.sku}</p>
-                      </div>
-                      <span className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
-                        {cfg.label}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5">
-                        <Package className="w-3 h-3 text-slate-400" />
-                        <span className="text-sm font-bold text-slate-800">{item.quantity.toLocaleString()}</span>
-                        <span className="text-xs text-slate-400">{item.unit}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-400">{item.lastUpdated}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Results Modal ─────────────────────────────────────────── */}
       {showResults && (
