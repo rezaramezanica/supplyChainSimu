@@ -25,7 +25,7 @@ const SIM_HOURS = 2920;                        // 365 * 8
 const CANADA_GEO       = "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
 const US_GEO           = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 const CENTRAL_HUB_COORDS: [number, number] = [-119.91, 50.28]; // S2 hub
-const DC_S3_COORDS:       [number, number] = [-119.55, 50.05]; // S3 distribution centre
+const DC_S3_COORDS:       [number, number] = [-119.91, 50.28]; // S3 DC (same midpoint, different scenario)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -877,14 +877,26 @@ export function BCMap() {
                 {(() => {
                   const hub = locations[0]; const s = hub.stock;
                   const hasStockout = (statsRef.current["kamloops"]?.stockoutInstances ?? 0) > 0;
+                  const W = 168, H = 118, pinR = 13;
+                  const cardTop = -(H + 80); // above hub pin, clear of both city pins
                   return (
                     <Marker coordinates={CENTRAL_HUB_COORDS} onClick={() => toggle(hub)} style={{ cursor: "pointer" }}>
-                      <g transform={`translate(${-168 / 2}, ${-118 / 2})`} style={{ pointerEvents: "none" }}>
+                      {/* vertical connector from pin top to card bottom */}
+                      <line x1={0} y1={-pinR} x2={0} y2={cardTop + H}
+                        stroke="#0d9488" strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2"
+                        style={{ pointerEvents: "none" }} />
+                      {/* hub pin */}
+                      <circle r={pinR} fill="white" stroke="#0d9488" strokeWidth={2.5} />
+                      <circle r={5} fill="#0d9488" />
+                      <text textAnchor="middle" y={pinR + 14} fill="#0d9488" fontSize={10} fontWeight="700"
+                        fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>Hub</text>
+                      {/* inventory card above pin */}
+                      <g transform={`translate(${-W / 2}, ${cardTop})`} style={{ pointerEvents: "none" }}>
                         <InventoryCard s={s} color="#0d9488" label="CENTRAL HUB" isCritical={hasStockout} />
                         {!hasStockout && (
                           <g>
-                            <rect x={168 - 46} y={5} width={38} height={14} rx={4} fill="#0d9488" fillOpacity={0.15} stroke="#0d9488" strokeWidth={1} strokeOpacity={0.4} />
-                            <text x={168 - 27} y={14.5} textAnchor="middle" fontSize={7} fontWeight="700" fill="#0d9488" fontFamily="system-ui, sans-serif">◎ HUB</text>
+                            <rect x={W - 46} y={5} width={38} height={14} rx={4} fill="#0d9488" fillOpacity={0.15} stroke="#0d9488" strokeWidth={1} strokeOpacity={0.4} />
+                            <text x={W - 27} y={14.5} textAnchor="middle" fontSize={7} fontWeight="700" fill="#0d9488" fontFamily="system-ui, sans-serif">◎ HUB</text>
                           </g>
                         )}
                       </g>
@@ -918,23 +930,42 @@ export function BCMap() {
                 {/* Direct supply line between warehouses */}
                 <Line from={locations[0].coordinates} to={locations[1].coordinates} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" strokeLinecap="round" />
 
-                {/* DC card */}
+                {/* DC card — rendered above the pin so it doesn't overlap facility cards */}
                 {(() => {
-                  const W = 156, H = 72;
-                  const dcPct    = dcInitialRef.current > 0 ? dcInventory / dcInitialRef.current : 0;
-                  const dcColor  = dcInventory <= 0 ? "#ef4444" : dcInventory < dcInitialRef.current * 0.3 ? "#f59e0b" : "#7c3aed";
-                  const barW = 128, barH = 9;
+                  const W = 160, H = 72;
+                  const pinR = 10;
+                  const gap  = 10; // gap between pin top and card bottom
+                  const dcPct   = dcInitialRef.current > 0 ? dcInventory / dcInitialRef.current : 0;
+                  const dcColor = dcInventory <= 0 ? "#ef4444" : dcInventory < dcInitialRef.current * 0.3 ? "#f59e0b" : "#7c3aed";
+                  const barW = 132, barH = 9;
+                  const cardTop = -(H + 100); // high enough to clear both facility cards
                   return (
                     <Marker coordinates={DC_S3_COORDS} style={{ cursor: "default" }}>
-                      <g transform={`translate(${-W / 2}, ${-H / 2})`} style={{ pointerEvents: "none" }}>
+                      {/* connector line from pin to card */}
+                      <line x1={0} y1={-pinR} x2={0} y2={cardTop + H}
+                        stroke="#7c3aed" strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2"
+                        style={{ pointerEvents: "none" }} />
+                      {/* DC pin diamond */}
+                      <g transform="rotate(45)">
+                        <rect x={-7} y={-7} width={14} height={14} fill="white" stroke="#7c3aed" strokeWidth={2} rx={2} />
+                      </g>
+                      <circle r={4} fill="#7c3aed" />
+                      <text textAnchor="middle" y={pinR + 12} fill="#7c3aed" fontSize={9} fontWeight="700"
+                        fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>DC</text>
+                      {/* card above pin */}
+                      <g transform={`translate(${-W / 2}, ${cardTop})`} style={{ pointerEvents: "none" }}>
                         <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
-                        <rect width={W} height={H} rx={7} fill="white" stroke="#7c3aed" strokeWidth={1.5} strokeOpacity={dcInventory <= 0 ? 0 : 0.5} />
-                        {dcInventory <= 0 && <rect width={W} height={H} rx={7} fill="white" stroke="#ef4444" strokeWidth={2} strokeOpacity={0.8} />}
+                        <rect width={W} height={H} rx={7} fill="white"
+                          stroke={dcInventory <= 0 ? "#ef4444" : "#7c3aed"}
+                          strokeWidth={dcInventory <= 0 ? 2 : 1.5}
+                          strokeOpacity={dcInventory <= 0 ? 0.9 : 0.5} />
                         <rect width={4} height={H} rx={2} fill={dcInventory <= 0 ? "#ef4444" : "#7c3aed"} />
                         <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">DISTRIBUTION CENTRE</text>
-                        <text x={14} y={30} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock Reserve</text>
-                        <text x={W - 10} y={30} textAnchor="end" fontSize={9} fontWeight="700" fill={dcColor} fontFamily="system-ui, sans-serif">{dcInventory.toLocaleString()} / {dcInitialRef.current} units</text>
-                        <g transform="translate(14, 40)">
+                        <text x={14} y={31} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock Reserve</text>
+                        <text x={W - 10} y={31} textAnchor="end" fontSize={9} fontWeight="700" fill={dcColor} fontFamily="system-ui, sans-serif">
+                          {dcInventory.toLocaleString()} / {dcInitialRef.current} units
+                        </text>
+                        <g transform="translate(14, 42)">
                           <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
                           <rect width={Math.max(barW * dcPct, dcInventory > 0 ? barH : 0)} height={barH} rx={4} fill={dcColor} fillOpacity={0.75} />
                           <text x={barW / 2} y={barH + 13} textAnchor="middle" fontSize={7} fill="#7c3aed" fontWeight="600" fontFamily="system-ui, sans-serif">
