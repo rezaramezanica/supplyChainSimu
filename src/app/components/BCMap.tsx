@@ -13,11 +13,11 @@ import {
 // ─── Simulation constants (from spec) ─────────────────────────────────────────
 
 const SIM_Q     = 1000;
-const SIM_SS    = 100;                         // safety stock per region (baseline)
+const SIM_SS    = 50;                          // safety stock per region (baseline)
 const SIM_LT    = 16;                          // lead time in hours
 const SIM_D     = 5;                           // average hourly demand per region
 const SIM_STD   = 2;
-const SIM_ROP   = SIM_D * SIM_LT + SIM_SS;    // = 180
+const SIM_ROP   = 200;                         // reorder point per region
 const SIM_INIT  = SIM_Q + SIM_SS;             // = 1100
 const SIM_CAP   = SIM_Q * 3;                  // visual capacity bar
 const SIM_HOURS = 2920;                        // 365 * 8
@@ -436,33 +436,43 @@ function ResultsModal({
 function InventoryCard({ s, color, label, isCritical }: {
   s: StockMetrics; color: string; label: string; isCritical?: boolean;
 }) {
-  const W = 168, H = 118, barW = 138, barH = 9;
-  const fillPct  = s.capacity > 0 ? s.current / s.capacity : 0;
-  const ropPct   = s.capacity > 0 ? s.reorderPoint / s.capacity : 0;
-  const ssPct    = s.capacity > 0 ? s.safetyStock  / s.capacity : 0;
+  const W = 168, H = 118;
+  const barVW = 10, barVH = 85, barX = 6, barY = 16;
+  const fillPct  = s.capacity > 0 ? Math.min(s.current / s.capacity, 1) : 0;
+  const ropPct   = s.capacity > 0 ? Math.min(s.reorderPoint / s.capacity, 1) : 0;
+  const ssPct    = s.capacity > 0 ? Math.min(s.safetyStock  / s.capacity, 1) : 0;
   const fillColor = s.current <= s.safetyStock ? "#ef4444" : s.current <= s.reorderPoint ? "#f59e0b" : color;
+  const ropY = barVH * (1 - ropPct);
+  const ssY  = barVH * (1 - ssPct);
+  // Ensure labels are at least 10px apart even when thresholds are close
+  const minLabelGap = 10;
+  const ropLabelY = ropY;
+  const ssLabelY  = ssY - ropY < minLabelGap ? ropY + minLabelGap : ssY;
   return (
     <g>
       <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
       <rect width={W} height={H} rx={7} fill="white" stroke={isCritical ? "#ef4444" : color} strokeWidth={isCritical ? 2.5 : 1.5} strokeOpacity={isCritical ? 0.9 : 0.35} />
-      <rect width={4} height={H} rx={2} fill={isCritical ? "#ef4444" : color} />
-      <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">{label}</text>
-      <text x={14} y={33} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Current Level</text>
+      <text x={28} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">{label}</text>
+      <text x={28} y={33} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Current Level</text>
       <text x={W - 10} y={33} textAnchor="end" fontSize={9} fontWeight="700" fill={fillColor} fontFamily="system-ui, sans-serif">{s.current.toLocaleString()} {s.unit}</text>
-      <line x1={14} y1={39} x2={W - 10} y2={39} stroke="#f1f5f9" strokeWidth={1} />
-      <circle cx={17.5} cy={51} r={3.5} fill="#fef3c7" stroke="#f59e0b" strokeWidth={1} />
-      <text x={24} y={55} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Reorder Point</text>
+      <line x1={28} y1={39} x2={W - 10} y2={39} stroke="#f1f5f9" strokeWidth={1} />
+      <circle cx={31.5} cy={51} r={3.5} fill="#fef3c7" stroke="#f59e0b" strokeWidth={1} />
+      <text x={38} y={55} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Reorder Point</text>
       <text x={W - 10} y={55} textAnchor="end" fontSize={9} fontWeight="600" fill="#d97706" fontFamily="system-ui, sans-serif">{s.reorderPoint.toLocaleString()} {s.unit}</text>
-      <circle cx={17.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
-      <text x={24} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
+      <circle cx={31.5} cy={69} r={3.5} fill="#fee2e2" stroke="#ef4444" strokeWidth={1} />
+      <text x={38} y={73} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock</text>
       <text x={W - 10} y={73} textAnchor="end" fontSize={9} fontWeight="600" fill="#dc2626" fontFamily="system-ui, sans-serif">{s.safetyStock.toLocaleString()} {s.unit}</text>
-      <g transform="translate(14, 84)">
-        <rect width={barW} height={barH} rx={4} fill="#f1f5f9" />
-        <rect width={Math.max(barW * fillPct, barH)} height={barH} rx={4} fill={fillColor} fillOpacity={0.8} />
-        <line x1={barW * ropPct} y1={-3} x2={barW * ropPct} y2={barH + 3} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
-        <line x1={barW * ssPct}  y1={-3} x2={barW * ssPct}  y2={barH + 3} stroke="#ef4444" strokeWidth={2} strokeLinecap="round" />
-        <text x={barW * ropPct} y={barH + 13} textAnchor="middle" fontSize={7} fill="#d97706" fontWeight="600" fontFamily="system-ui, sans-serif">ROP</text>
-        <text x={barW * ssPct}  y={barH + 13} textAnchor="middle" fontSize={7} fill="#dc2626" fontWeight="600" fontFamily="system-ui, sans-serif">SS</text>
+      {/* Vertical inventory bar on left */}
+      <g transform={`translate(${barX}, ${barY})`}>
+        <rect width={barVW} height={barVH} rx={3} fill="#f1f5f9" />
+        <rect x={0} y={barVH * (1 - fillPct)} width={barVW} height={barVH * fillPct} rx={3} fill={fillColor} fillOpacity={0.8} />
+        {/* ROP marker + label */}
+        <line x1={-3} y1={ropY} x2={barVW + 3} y2={ropY} stroke="#f59e0b" strokeWidth={2} strokeLinecap="round" />
+        <text x={barVW + 5} y={ropLabelY + 3} fontSize={7} fill="#d97706" fontWeight="700" fontFamily="system-ui, sans-serif">ROP</text>
+        {/* SS marker + label (pushed down if too close to ROP) */}
+        <line x1={-3} y1={ssY} x2={barVW + 3} y2={ssY} stroke="#ef4444" strokeWidth={2} strokeLinecap="round" />
+        {ssLabelY !== ssY && <line x1={barVW + 3} y1={ssY} x2={barVW + 3} y2={ssLabelY} stroke="#ef4444" strokeWidth={0.75} strokeOpacity={0.5} />}
+        <text x={barVW + 5} y={ssLabelY + 3} fontSize={7} fill="#dc2626" fontWeight="700" fontFamily="system-ui, sans-serif">SS</text>
       </g>
     </g>
   );
