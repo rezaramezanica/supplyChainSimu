@@ -715,7 +715,7 @@ export function BCMap() {
     <div className="relative w-full h-full bg-slate-100 overflow-hidden font-sans">
 
       {/* ── Top bar ───────────────────────────────────────────────── */}
-      <header className="absolute top-0 left-0 right-0 z-20 h-14 flex items-center justify-between px-5 bg-white border-b border-slate-200 shadow-sm gap-3">
+      <header className="absolute top-0 left-0 right-0 z-20 h-14 flex items-center justify-between px-5 bg-white border-b border-slate-200 shadow-sm gap-3 relative">
 
         {/* Left */}
         <div className="flex items-center gap-3 shrink-0">
@@ -728,8 +728,8 @@ export function BCMap() {
           </div>
         </div>
 
-        {/* Center: scenario tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 shrink-0">
+        {/* Center: scenario tabs — absolutely centered so it never shifts */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-slate-100 rounded-lg p-1">
           {([1, 2, 3] as ScenarioId[]).map((s) => {
             const info = {
               1: ["Scenario 1", "Decentralized"],
