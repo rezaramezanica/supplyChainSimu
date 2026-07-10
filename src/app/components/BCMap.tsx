@@ -24,7 +24,7 @@ const SIM_HOURS = 2920;                        // 365 * 8
 const CANADA_GEO       = "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
 const US_GEO           = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 const CENTRAL_HUB_COORDS: [number, number] = [-119.91, 50.28]; // S2 hub
-const DC_S3_COORDS:       [number, number] = [-119.91, 50.28]; // S3 DC (same midpoint, different scenario)
+const DC_S3_COORDS:       [number, number] = [-120.786, 50.111]; // S3 DC — Merritt, BC
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -910,19 +910,19 @@ export function BCMap() {
                 {/* Direct supply line between warehouses */}
                 <Line from={locations[0].coordinates} to={locations[1].coordinates} stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" strokeLinecap="round" />
 
-                {/* DC card — rendered above the pin so it doesn't overlap facility cards */}
+                {/* DC card — rendered below the pin */}
                 {(() => {
                   const W = 160, H = 72;
                   const pinR = 10;
-                  const gap  = 10; // gap between pin top and card bottom
+                  const gap  = 10;
                   const dcPct   = dcInitialRef.current > 0 ? dcInventory / dcInitialRef.current : 0;
                   const dcColor = dcInventory <= 0 ? "#ef4444" : dcInventory < dcInitialRef.current * 0.3 ? "#f59e0b" : "#7c3aed";
                   const barW = 132, barH = 9;
-                  const cardTop = -(H + 100); // high enough to clear both facility cards
+                  const cardTop = pinR + 55; // below pin, clearing the "DC" label
                   return (
                     <Marker coordinates={DC_S3_COORDS} style={{ cursor: "default" }}>
-                      {/* connector line from pin to card */}
-                      <line x1={0} y1={-pinR} x2={0} y2={cardTop + H}
+                      {/* connector line from pin bottom to card top */}
+                      <line x1={0} y1={pinR} x2={0} y2={cardTop}
                         stroke="#7c3aed" strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2"
                         style={{ pointerEvents: "none" }} />
                       {/* DC pin diamond */}
@@ -932,7 +932,7 @@ export function BCMap() {
                       <circle r={4} fill="#7c3aed" />
                       <text textAnchor="middle" y={pinR + 12} fill="#7c3aed" fontSize={9} fontWeight="700"
                         fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>DC</text>
-                      {/* card above pin */}
+                      {/* card below pin */}
                       <g transform={`translate(${-W / 2}, ${cardTop})`} style={{ pointerEvents: "none" }}>
                         <rect x={2} y={2} width={W} height={H} rx={7} fill="rgba(0,0,0,0.10)" />
                         <rect width={W} height={H} rx={7} fill="white"
@@ -964,10 +964,11 @@ export function BCMap() {
                   const W = 168, H = 142;
                   const pinR = active ? 18 : 13;
                   const gap    = 14;
-                  const cardX  = loc.cardSide === "left" ? -(pinR + gap + W) : pinR + gap;
+                  const extraLeft = loc.id === "kamloops" ? 40 : 0;
+                  const cardX  = loc.cardSide === "left" ? -(pinR + gap + W + extraLeft) : pinR + gap;
                   const cardY  = -H / 2;
                   const connX1 = loc.cardSide === "left" ? -pinR : pinR;
-                  const connX2 = loc.cardSide === "left" ? -(pinR + gap) : pinR + gap;
+                  const connX2 = loc.cardSide === "left" ? -(pinR + gap + extraLeft) : pinR + gap;
                   return (
                     <Marker key={loc.id} coordinates={loc.coordinates}
                       onMouseEnter={() => setHovered(loc.id)} onMouseLeave={() => setHovered(null)} style={{ cursor: "default" }}>
