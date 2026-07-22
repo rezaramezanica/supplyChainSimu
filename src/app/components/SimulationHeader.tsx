@@ -1,4 +1,4 @@
-import truLogo from "../../../tru_logo.png";
+import truLogo from "../../assets/tru_logo.png";
 import { RotateCcw, Play, Pause } from "lucide-react";
 import type { ScenarioId } from "../simulation/types";
 import { SIM_TOTAL_HOURS } from "../simulation/constants";
