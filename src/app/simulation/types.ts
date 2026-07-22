@@ -1,14 +1,5 @@
 export type ScenarioId = 1 | 2 | 3;
 
-export type InventoryItem = {
-  category: string;
-  sku: string;
-  quantity: number;
-  unit: string;
-  status: "healthy" | "low" | "critical";
-  lastUpdated: string;
-};
-
 export type StockMetrics = {
   current: number;
   reorderPoint: number;
@@ -24,13 +15,6 @@ export type LocationData = {
   color: string;
   lightColor: string;
   accent: string;
-  address: string;
-  warehouseSize: string;
-  manager: string;
-  phone: string;
-  inventory: InventoryItem[];
-  totalSkus: number;
-  totalValue: string;
   stock: StockMetrics;
   cardSide: "left" | "right";
 };

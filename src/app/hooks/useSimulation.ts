@@ -6,11 +6,10 @@ import {
 } from "../simulation/constants";
 import {
   normalRandom, createInitialLocationState, createEmptyStats,
-  deriveItemStatus, getCurrentTimeString,
   stepIndependent, stepPooled, stepScenario3,
 } from "../simulation/stepFunctions";
 import {
-  getScenario3Parameters, getScenarioLocations, itemMaxQty,
+  getScenario3Parameters, getScenarioLocations,
 } from "../simulation/locationData";
 
 export function useSimulation() {
@@ -124,19 +123,9 @@ export function useSimulation() {
         locationStats.stockoutInstances   = next.stockoutInstances;
         locationStats.replenishmentOrders = next.replenishmentOrders;
 
-        const hubCapacity     = SIM_INVENTORY_CAPACITY * 2;
-        const stockPercentage = hubCapacity > 0 ? next.inventory / hubCapacity : 0;
         setLocations((prev) => prev.map((loc, locationIndex) => {
           if (locationIndex !== 0) return loc;
-          return {
-            ...loc,
-            stock: { ...loc.stock, current: next.inventory },
-            inventory: loc.inventory.map((item) => {
-              const maxQuantity = itemMaxQty[item.sku] ?? item.quantity;
-              const quantity    = Math.max(0, Math.round(maxQuantity * stockPercentage * (0.85 + Math.random() * 0.3)));
-              return { ...item, quantity, status: deriveItemStatus(quantity, maxQuantity), lastUpdated: `Today, ${getCurrentTimeString()}` };
-            }),
-          };
+          return { ...loc, stock: { ...loc.stock, current: next.inventory } };
         }));
 
       // ── Scenario 3: partial SS centralisation ────────────────────────────
@@ -168,16 +157,10 @@ export function useSimulation() {
 
         setDistributionCenterInventory(result.nextDistributionCenterInventory);
         setLocations((prev) => prev.map((loc) => {
-          const nextState       = loc.id === "kamloops" ? result.nextRegion1State : result.nextRegion2State;
-          const stockPercentage = SIM_INVENTORY_CAPACITY > 0 ? nextState.inventory / SIM_INVENTORY_CAPACITY : 0;
+          const nextState = loc.id === "kamloops" ? result.nextRegion1State : result.nextRegion2State;
           return {
             ...loc,
             stock: { current: nextState.inventory, reorderPoint: reorderPointPerRegion, safetyStock: safetyStockPerRegion, capacity: SIM_INVENTORY_CAPACITY, unit: "units" },
-            inventory: loc.inventory.map((item) => {
-              const maxQuantity = itemMaxQty[item.sku] ?? item.quantity;
-              const quantity    = Math.max(0, Math.round(maxQuantity * stockPercentage * (0.85 + Math.random() * 0.3)));
-              return { ...item, quantity, status: deriveItemStatus(quantity, maxQuantity), lastUpdated: `Today, ${getCurrentTimeString()}` };
-            }),
           };
         }));
 
@@ -200,16 +183,7 @@ export function useSimulation() {
         setLocations((prev) => prev.map((loc) => {
           const nextState = updatedStates[loc.id];
           if (!nextState) return loc;
-          const stockPercentage = SIM_INVENTORY_CAPACITY > 0 ? nextState.inventory / SIM_INVENTORY_CAPACITY : 0;
-          return {
-            ...loc,
-            stock: { ...loc.stock, current: nextState.inventory },
-            inventory: loc.inventory.map((item) => {
-              const maxQuantity = itemMaxQty[item.sku] ?? item.quantity;
-              const quantity    = Math.max(0, Math.round(maxQuantity * stockPercentage * (0.85 + Math.random() * 0.3)));
-              return { ...item, quantity, status: deriveItemStatus(quantity, maxQuantity), lastUpdated: `Today, ${getCurrentTimeString()}` };
-            }),
-          };
+          return { ...loc, stock: { ...loc.stock, current: nextState.inventory } };
         }));
       }
 
