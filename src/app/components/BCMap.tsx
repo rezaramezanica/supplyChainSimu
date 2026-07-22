@@ -7,7 +7,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid,
 } from "recharts";
 import {
-  X, Plus, Minus, RotateCcw, Play, Pause, AlertTriangle,
+  X, Plus, Minus, RotateCcw, Play, Pause,
 } from "lucide-react";
 
 // ─── Simulation constants (from spec) ─────────────────────────────────────────
@@ -83,10 +83,6 @@ function normalRandom(mean: number, std: number): number {
   return Math.max(0, Math.round(mean + z * std));
 }
 
-const SHARED_DEMAND = {
-  r1: Array.from({ length: SIM_HOURS }, () => normalRandom(SIM_D, SIM_STD)),
-  r2: Array.from({ length: SIM_HOURS }, () => normalRandom(SIM_D, SIM_STD)),
-};
 
 // ─── Simulation step functions ────────────────────────────────────────────────
 
@@ -95,11 +91,11 @@ function initLocState(initInv = SIM_INIT): LocSimState {
 }
 
 // Scenario 1: independent facilities
-function stepIndep(s: LocSimState, demand: number, h: number): { next: LocSimState; newStockout: boolean } {
+function stepIndep(s: LocSimState, demand: number, h: number, rop = SIM_ROP, lt = SIM_LT): { next: LocSimState; newStockout: boolean } {
   let inv = s.inventory, orderHour = s.orderDeliveryHour;
   if (orderHour > 0 && h >= orderHour) { inv += SIM_Q; orderHour = 0; }
   let repOrders = s.replenishmentOrders;
-  if (orderHour === 0 && inv > SIM_ROP && inv - demand <= SIM_ROP) { orderHour = h + SIM_LT; repOrders++; }
+  if (orderHour === 0 && inv > rop && inv - demand <= rop) { orderHour = h + lt; repOrders++; }
   let stockouts = s.stockoutInstances; let newStockout = false;
   if (inv >= 1 && inv - demand <= 0) { stockouts++; newStockout = true; }
   let demandLost = s.demandLost;
@@ -498,7 +494,6 @@ export function BCMap() {
   const [resultsData, setResultsData]           = useState<Record<string, SimStats>>({});
   const [currentHour, setCurrentHour]           = useState(0);
   const [speedMs, setSpeedMs]                   = useState(200);
-  const [pausedOnStockout, setPausedOnStockout] = useState(false);
   const [dcInventory, setDcInventory]           = useState(0);   // S3 DC display
 
   const intervalRef      = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -510,8 +505,13 @@ export function BCMap() {
   const centralPctRef    = useRef(50);
   const firstStockoutRef = useRef(false);
   const dcInitialRef     = useRef(0); // for results modal
+  const demandRef        = useRef({ r1: [] as number[], r2: [] as number[] });
 
   const initSim = (scenario: ScenarioId, pct: number) => {
+    demandRef.current = {
+      r1: Array.from({ length: SIM_HOURS }, () => normalRandom(SIM_D, SIM_STD)),
+      r2: Array.from({ length: SIM_HOURS }, () => normalRandom(SIM_D, SIM_STD)),
+    };
     const { ssDC, ssR, initR } = s3Params(pct);
     if (scenario === 2) {
       simStateRef.current = { kamloops: initLocState(SIM_INIT * 2), kelowna: initLocState() };
@@ -533,7 +533,6 @@ export function BCMap() {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     initSim(scenario, pct);
     setIsPlaying(false);
-    setPausedOnStockout(false);
     setCurrentHour(0);
     setDcInventory(dcInvRef.current);
     setLocations(getScenarioLocations(scenario, pct));
@@ -572,8 +571,8 @@ export function BCMap() {
         return;
       }
 
-      const r1d = SHARED_DEMAND.r1[h];
-      const r2d = SHARED_DEMAND.r2[h];
+      const r1d = demandRef.current.r1[h];
+      const r2d = demandRef.current.r2[h];
       let anyNewStockout = false;
 
       // ── Scenario 2: pooled ────────────────────────────────────────────────
@@ -654,7 +653,7 @@ export function BCMap() {
         const updates: Record<string, LocSimState> = {};
         for (const [id, demand] of [["kamloops", r1d], ["kelowna", r2d]] as [string, number][]) {
           const state = simStateRef.current[id] ?? initLocState();
-          const { next, newStockout } = stepIndep(state, demand, h);
+          const { next, newStockout } = stepIndep(state, demand, h, SIM_ROP, 37);
           updates[id] = next;
           simStateRef.current[id] = next;
           if (!statsRef.current[id]) statsRef.current[id] = emptyStats();
@@ -679,12 +678,7 @@ export function BCMap() {
         }));
       }
 
-      if (anyNewStockout && !firstStockoutRef.current) {
-        firstStockoutRef.current = true;
-        setPausedOnStockout(true);
-        setIsPlaying(false);
-        clearInterval(intervalRef.current!); intervalRef.current = null;
-      }
+      if (anyNewStockout) firstStockoutRef.current = true;
 
       hourRef.current += 1;
       setCurrentHour(h + 1);
@@ -706,7 +700,6 @@ export function BCMap() {
         setLocations(getScenarioLocations(activeScenario, centralSSPct));
         setDcInventory(dcInvRef.current);
       }
-      setPausedOnStockout(false);
       setIsPlaying(true);
     }
   };
@@ -813,19 +806,6 @@ export function BCMap() {
         </div>
       </header>
 
-      {/* ── Stockout banner ──────────────────────────────────────────── */}
-      {pausedOnStockout && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30">
-          <div className="flex items-center gap-3 bg-red-600 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-semibold">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>First stockout — simulation paused for analysis</span>
-            <button onClick={() => { setPausedOnStockout(false); setIsPlaying(true); }}
-              className="ml-2 px-3 py-1 bg-white text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 transition-colors">
-              Resume
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ── Map ──────────────────────────────────────────────────────── */}
       <div className="absolute inset-0 top-20">
