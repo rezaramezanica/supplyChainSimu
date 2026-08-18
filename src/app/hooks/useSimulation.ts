@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { ScenarioId, LocationData, LocSimState, SimStats } from "../simulation/types";
 import {
   SIM_DEMAND_MEAN, SIM_DEMAND_STD_DEV, SIM_TOTAL_HOURS,
-  SIM_INITIAL_INVENTORY, SIM_INVENTORY_CAPACITY, SIM_REORDER_POINT,
+  SIM_INITIAL_INVENTORY, SIM_INVENTORY_CAPACITY, SIM_REORDER_POINT, SIM_LEAD_TIME,
 } from "../simulation/constants";
 import {
   normalRandom, createInitialLocationState, createEmptyStats,
@@ -169,7 +169,7 @@ export function useSimulation() {
         const updatedStates: Record<string, LocSimState> = {};
         for (const [id, demand] of [["kamloops", region1Demand], ["kelowna", region2Demand]] as [string, number][]) {
           const locationState = simulationStateRef.current[id] ?? createInitialLocationState();
-          const { next } = stepIndependent(locationState, demand, simulationHour, SIM_REORDER_POINT, 37);
+          const { next } = stepIndependent(locationState, demand, simulationHour, SIM_REORDER_POINT, SIM_LEAD_TIME);
           updatedStates[id] = next;
           simulationStateRef.current[id] = next;
           if (!simulationStatsRef.current[id]) simulationStatsRef.current[id] = createEmptyStats();

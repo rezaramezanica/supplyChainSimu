@@ -1,9 +1,9 @@
-export const SIM_ORDER_QUANTITY    = 1000;
-export const SIM_SAFETY_STOCK      = 100;   // safety stock per region (baseline)
+export const SIM_ORDER_QUANTITY    = 17000;
+export const SIM_SAFETY_STOCK      = 165;   // safety stock per region (baseline)
 export const SIM_LEAD_TIME         = 16;    // lead time in hours
-export const SIM_DEMAND_MEAN       = 5;     // average hourly demand per region
-export const SIM_DEMAND_STD_DEV    = 2;     // std deviation of hourly demand
-export const SIM_REORDER_POINT     = 200;   // reorder point per region
+export const SIM_DEMAND_MEAN       = 500;     // average hourly demand per region
+export const SIM_DEMAND_STD_DEV    = 25;     // std deviation of hourly demand
+export const SIM_REORDER_POINT     = 8000;   // reorder point per region
 export const SIM_INITIAL_INVENTORY = SIM_ORDER_QUANTITY + SIM_SAFETY_STOCK; // = 1100
 export const SIM_INVENTORY_CAPACITY = SIM_INITIAL_INVENTORY; // visual capacity = starting inventory
 export const SIM_TOTAL_HOURS       = 2920;  // 365 * 8
