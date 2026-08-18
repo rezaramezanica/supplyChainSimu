@@ -33,6 +33,7 @@ export function useSimulation() {
   const centralPercentageRef         = useRef(50);
   const distributionCenterInitialRef = useRef(0);
   const demandArraysRef              = useRef({ r1: [] as number[], r2: [] as number[] });
+  const firstStockoutPausedRef       = useRef(false);
 
   const initSim = (scenario: ScenarioId, pct: number) => {
     demandArraysRef.current = {
@@ -62,6 +63,7 @@ export function useSimulation() {
     }
     simulationStatsRef.current = {};
     simulationHourRef.current  = 0;
+    firstStockoutPausedRef.current = false;
   };
 
   const resetAll = (scenario: ScenarioId, pct = centralSafetyStockPercentage) => {
@@ -111,10 +113,13 @@ export function useSimulation() {
       const region1Demand = demandArraysRef.current.r1[simulationHour];
       const region2Demand = demandArraysRef.current.r2[simulationHour];
 
+      let firstStockoutThisTick = false;
+
       // ── Scenario 2: pooled ───────────────────────────────────────────────
       if (scenario === 2) {
         const hub = simulationStateRef.current["kamloops"] ?? createInitialLocationState(SIM_INITIAL_INVENTORY * 2);
-        const { next } = stepPooled(hub, region1Demand, region2Demand, simulationHour);
+        const { next, newStockout } = stepPooled(hub, region1Demand, region2Demand, simulationHour);
+        if (newStockout) firstStockoutThisTick = true;
         simulationStateRef.current["kamloops"] = next;
         if (!simulationStatsRef.current["kamloops"]) simulationStatsRef.current["kamloops"] = createEmptyStats();
         const locationStats = simulationStatsRef.current["kamloops"];
@@ -138,6 +143,7 @@ export function useSimulation() {
         const currentDCInventory = distributionCenterInventoryRef.current;
 
         const result = stepScenario3(region1State, region2State, currentDCInventory, region1Demand, region2Demand, simulationHour, safetyStockPerRegion, safetyStockPerRegion);
+        if (result.newStockout) firstStockoutThisTick = true;
         simulationStateRef.current["kamloops"]  = result.nextRegion1State;
         simulationStateRef.current["kelowna"]   = result.nextRegion2State;
         distributionCenterInventoryRef.current  = result.nextDistributionCenterInventory;
@@ -170,7 +176,8 @@ export function useSimulation() {
         const updatedStates: Record<string, LocSimState> = {};
         for (const [id, demand] of [["kamloops", region1Demand], ["kelowna", region2Demand]] as [string, number][]) {
           const locationState = simulationStateRef.current[id] ?? createInitialLocationState();
-          const { next } = stepIndependent(locationState, demand, simulationHour, SIM_REORDER_POINT, SIM_LEAD_TIME);
+          const { next, newStockout } = stepIndependent(locationState, demand, simulationHour, SIM_REORDER_POINT, SIM_LEAD_TIME);
+          if (newStockout) firstStockoutThisTick = true;
           updatedStates[id] = next;
           simulationStateRef.current[id] = next;
           if (!simulationStatsRef.current[id]) simulationStatsRef.current[id] = createEmptyStats();
@@ -190,6 +197,20 @@ export function useSimulation() {
 
       simulationHourRef.current += 1;
       setCurrentHour(simulationHour + 1);
+
+      // Pause on first stockout so students can analyze
+      if (firstStockoutThisTick && !firstStockoutPausedRef.current) {
+        firstStockoutPausedRef.current = true;
+        clearInterval(intervalRef.current!);
+        intervalRef.current = null;
+        setIsPlaying(false);
+        const captured = { ...simulationStatsRef.current };
+        if (Object.values(captured).some((s) => s.demands.length > 0)) {
+          setResultsData(captured);
+          setShowResults(true);
+        }
+        return;
+      }
     }, speedMilliseconds);
 
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
