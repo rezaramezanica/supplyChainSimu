@@ -4,6 +4,9 @@ import {
   SIM_INITIAL_INVENTORY, SIM_DEMAND_MEAN,
 } from "./constants";
 
+// This function generates a random number from a normal (Gaussian) distribution using 
+// the Box-Muller Transform — a classic algorithm for converting uniform random numbers 
+// into normally distributed ones.
 export function normalRandom(mean: number, standardDeviation: number): number {
   const u1 = Math.random(), u2 = Math.random();
   const z  = Math.sqrt(-2 * Math.log(Math.max(u1, 1e-10))) * Math.cos(2 * Math.PI * u2);
@@ -32,6 +35,8 @@ export function createEmptyStats(): SimStats {
   };
 }
 
+// This function classifies an inventory level into one of three status categories based on how full 
+// the stock is relative to its maximum capacity.
 export function deriveItemStatus(qty: number, maxQty: number): "healthy" | "low" | "critical" {
   const proportion = qty / maxQty;
   if (proportion <= 0.1) return "critical";
