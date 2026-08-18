@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import type { ScenarioId, LocationData, LocSimState, SimStats } from "../simulation/types";
 import {
-  SIM_DEMAND_MEAN, SIM_DEMAND_STD_DEV, SIM_TOTAL_HOURS,
+  SIM_TOTAL_HOURS,
   SIM_INITIAL_INVENTORY, SIM_INVENTORY_CAPACITY, SIM_REORDER_POINT, SIM_LEAD_TIME,
 } from "../simulation/constants";
 import {
-  normalRandom, createInitialLocationState, createEmptyStats,
+  createInitialLocationState, createEmptyStats,
   stepIndependent, stepPooled, stepScenario3,
 } from "../simulation/stepFunctions";
+import fixedDemands from "../simulation/fixedDemands.json";
 import {
   getScenario3Parameters, getScenarioLocations,
 } from "../simulation/locationData";
@@ -35,8 +36,8 @@ export function useSimulation() {
 
   const initSim = (scenario: ScenarioId, pct: number) => {
     demandArraysRef.current = {
-      r1: Array.from({ length: SIM_TOTAL_HOURS }, () => normalRandom(SIM_DEMAND_MEAN, SIM_DEMAND_STD_DEV)),
-      r2: Array.from({ length: SIM_TOTAL_HOURS }, () => normalRandom(SIM_DEMAND_MEAN, SIM_DEMAND_STD_DEV)),
+      r1: fixedDemands.r1,
+      r2: fixedDemands.r2,
     };
     const { safetyStockDistributionCenter, initialInventoryPerRegion } = getScenario3Parameters(pct);
     if (scenario === 2) {
