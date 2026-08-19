@@ -22,6 +22,14 @@ export const initialLocations: LocationData[] = [
   },
 ];
 
+export function getScenario2Parameters(hubSafetyStockPct: number) {
+  const hubSafetyStock  = Math.round(2 * SIM_SAFETY_STOCK * hubSafetyStockPct / 100);
+  const hubReorderPoint = 2 * SIM_DEMAND_MEAN * SIM_LEAD_TIME + hubSafetyStock;
+  const hubInitialInventory = 2 * SIM_ORDER_QUANTITY + hubSafetyStock;
+  const hubCapacity = hubInitialInventory;
+  return { hubSafetyStock, hubReorderPoint, hubInitialInventory, hubCapacity };
+}
+
 export function getScenario3Parameters(centralPct: number) {
   const safetyStockDistributionCenter = Math.round(2 * SIM_SAFETY_STOCK * centralPct / 100);
   const safetyStockPerRegion = Math.round((2 * SIM_SAFETY_STOCK - safetyStockDistributionCenter) / 2);
@@ -33,13 +41,14 @@ export function getScenario3Parameters(centralPct: number) {
   };
 }
 
-export function getScenarioLocations(scenario: ScenarioId, centralPct = 50): LocationData[] {
+export function getScenarioLocations(scenario: ScenarioId, centralPct = 50, hubSafetyStockPct = 100): LocationData[] {
   if (scenario === 2) {
+    const { hubSafetyStock, hubReorderPoint, hubInitialInventory, hubCapacity } = getScenario2Parameters(hubSafetyStockPct);
     const hubStock: StockMetrics = {
-      current: SIM_INITIAL_INVENTORY * 2,
-      reorderPoint: SIM_REORDER_POINT * 2,
-      safetyStock: SIM_SAFETY_STOCK * 2,
-      capacity: SIM_INVENTORY_CAPACITY * 2,
+      current: hubInitialInventory,
+      reorderPoint: hubReorderPoint,
+      safetyStock: hubSafetyStock,
+      capacity: hubCapacity,
       unit: "units",
     };
     return [

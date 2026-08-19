@@ -83,10 +83,10 @@ export function stepIndependent(
 // Scenario 2: pooled (combined inventory at hub)
 export function stepPooled(
   locationState: LocSimState, region1Demand: number, region2Demand: number, hour: number,
+  hubReorderPoint = SIM_REORDER_POINT * 2,
 ): { next: LocSimState; newStockout: boolean } {
   const combinedDemand = region1Demand + region2Demand;
   const doubleOrderQuantity = SIM_ORDER_QUANTITY * 2;
-  const doubleReorderPoint  = SIM_REORDER_POINT  * 2;
 
   let inventory = locationState.inventory;
   let orderDeliveryHour = locationState.orderDeliveryHour;
@@ -97,7 +97,7 @@ export function stepPooled(
   }
 
   let replenishmentOrders = locationState.replenishmentOrders;
-  if (orderDeliveryHour === 0 && inventory > doubleReorderPoint && inventory - combinedDemand <= doubleReorderPoint) {
+  if (orderDeliveryHour === 0 && inventory > hubReorderPoint && inventory - combinedDemand <= hubReorderPoint) {
     orderDeliveryHour = hour + SIM_LEAD_TIME;
     replenishmentOrders++;
   }

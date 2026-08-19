@@ -17,6 +17,7 @@ export function BCMap() {
   const {
     activeScenario,
     centralSafetyStockPercentage,
+    hubSafetyStockPercentage,
     locations,
     isPlaying,
     showResults,
@@ -29,6 +30,7 @@ export function BCMap() {
     handlePlayPause,
     handleScenarioChange,
     handleCentralPctChange,
+    handleHubSafetyStockChange,
     resetAll,
     simulationStatsRef,
     distributionCenterInitialRef,
@@ -50,11 +52,13 @@ export function BCMap() {
         isPlaying={isPlaying}
         speedMilliseconds={speedMilliseconds}
         centralSafetyStockPercentage={centralSafetyStockPercentage}
+        hubSafetyStockPercentage={hubSafetyStockPercentage}
         onScenarioChange={handleScenarioChange}
         onPlayPause={handlePlayPause}
         onReset={() => resetAll(activeScenario)}
         onSpeedChange={setSpeedMilliseconds}
         onCentralPctChange={handleCentralPctChange}
+        onHubSafetyStockChange={handleHubSafetyStockChange}
       />
 
       {/* Map */}

@@ -15,23 +15,28 @@ export function SimulationHeader({
   isPlaying,
   speedMilliseconds,
   centralSafetyStockPercentage,
+  hubSafetyStockPercentage,
   onScenarioChange,
   onPlayPause,
   onReset,
   onSpeedChange,
   onCentralPctChange,
+  onHubSafetyStockChange,
 }: {
   activeScenario: ScenarioId;
   currentHour: number;
   isPlaying: boolean;
   speedMilliseconds: number;
   centralSafetyStockPercentage: number;
+  hubSafetyStockPercentage: number;
   onScenarioChange: (s: ScenarioId) => void;
   onPlayPause: () => void;
   onReset: () => void;
   onSpeedChange: (ms: number) => void;
   onCentralPctChange: (pct: number) => void;
+  onHubSafetyStockChange: (pct: number) => void;
 }) {
+  const isScenario2 = activeScenario === 2;
   const isScenario3 = activeScenario === 3;
   const hourOfDay   = currentHour % 8;
 
@@ -70,6 +75,20 @@ export function SimulationHeader({
             <span>Hr {hourOfDay + 1}</span>
             <span className="text-slate-300 mx-0.5">|</span>
             <span className="tabular-nums">{currentHour}/{SIM_TOTAL_HOURS}</span>
+          </div>
+        )}
+
+        {/* S2: Hub safety-stock slider */}
+        {isScenario2 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 shrink-0">
+            <span className="text-[10px] text-teal-500 font-semibold uppercase">Hub SS%</span>
+            <input
+              type="range" min={0} max={200} step={25} value={hubSafetyStockPercentage}
+              onChange={(e) => onHubSafetyStockChange(Number(e.target.value))}
+              className="w-20 h-1.5 accent-teal-600"
+              title={`${hubSafetyStockPercentage}% of default hub safety stock`}
+            />
+            <span className="text-[10px] text-teal-700 font-bold w-10 text-left">{hubSafetyStockPercentage}%</span>
           </div>
         )}
 

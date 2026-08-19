@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { ScenarioId, LocationData, LocSimState, SimStats } from "../simulation/types";
 import {
   SIM_TOTAL_HOURS, SIM_DEMAND_MEAN, SIM_DEMAND_STD_DEV,
-  SIM_INITIAL_INVENTORY, SIM_INVENTORY_CAPACITY, SIM_REORDER_POINT, SIM_LEAD_TIME,
+  SIM_INVENTORY_CAPACITY, SIM_REORDER_POINT, SIM_LEAD_TIME,
   SIM_USE_FIXED_DEMANDS,
 } from "../simulation/constants";
 import {
@@ -11,12 +11,13 @@ import {
 } from "../simulation/stepFunctions";
 import fixedDemands from "../simulation/fixedDemands.json";
 import {
-  getScenario3Parameters, getScenarioLocations,
+  getScenario2Parameters, getScenario3Parameters, getScenarioLocations,
 } from "../simulation/locationData";
 
 export function useSimulation() {
   const [activeScenario, setActiveScenario]                       = useState<ScenarioId>(1);
   const [centralSafetyStockPercentage, setCentralSafetyStockPercentage] = useState(50);
+  const [hubSafetyStockPercentage, setHubSafetyStockPercentage]       = useState(100);
   const [locations, setLocations]                                 = useState<LocationData[]>(getScenarioLocations(1));
   const [isPlaying, setIsPlaying]                                 = useState(false);
   const [showResults, setShowResults]                             = useState(false);
@@ -32,6 +33,7 @@ export function useSimulation() {
   const distributionCenterInventoryRef = useRef(0);
   const activeScenarioRef            = useRef<ScenarioId>(1);
   const centralPercentageRef         = useRef(50);
+  const hubSafetyStockPctRef         = useRef(100);
   const distributionCenterInitialRef = useRef(0);
   const demandArraysRef              = useRef({ r1: [] as number[], r2: [] as number[] });
   const firstStockoutPausedRef       = useRef(false);
@@ -47,8 +49,9 @@ export function useSimulation() {
     }
     const { safetyStockDistributionCenter, initialInventoryPerRegion } = getScenario3Parameters(pct);
     if (scenario === 2) {
+      const { hubInitialInventory } = getScenario2Parameters(hubSafetyStockPctRef.current);
       simulationStateRef.current = {
-        kamloops: createInitialLocationState(SIM_INITIAL_INVENTORY * 2),
+        kamloops: createInitialLocationState(hubInitialInventory),
         kelowna:  createInitialLocationState(),
       };
       distributionCenterInventoryRef.current = 0;
@@ -77,7 +80,7 @@ export function useSimulation() {
     setIsPlaying(false);
     setCurrentHour(0);
     setDistributionCenterInventory(distributionCenterInventoryRef.current);
-    setLocations(getScenarioLocations(scenario, pct));
+    setLocations(getScenarioLocations(scenario, pct, hubSafetyStockPctRef.current));
   };
 
   const handleScenarioChange = (scenario: ScenarioId) => {
@@ -90,6 +93,12 @@ export function useSimulation() {
     centralPercentageRef.current = pct;
     setCentralSafetyStockPercentage(pct);
     resetAll(3, pct);
+  };
+
+  const handleHubSafetyStockChange = (pct: number) => {
+    hubSafetyStockPctRef.current = pct;
+    setHubSafetyStockPercentage(pct);
+    resetAll(2);
   };
 
   // ── Simulation loop ────────────────────────────────────────────────────────
@@ -122,8 +131,9 @@ export function useSimulation() {
 
       // ── Scenario 2: pooled ───────────────────────────────────────────────
       if (scenario === 2) {
-        const hub = simulationStateRef.current["kamloops"] ?? createInitialLocationState(SIM_INITIAL_INVENTORY * 2);
-        const { next, newStockout } = stepPooled(hub, region1Demand, region2Demand, simulationHour);
+        const { hubReorderPoint, hubInitialInventory } = getScenario2Parameters(hubSafetyStockPctRef.current);
+        const hub = simulationStateRef.current["kamloops"] ?? createInitialLocationState(hubInitialInventory);
+        const { next, newStockout } = stepPooled(hub, region1Demand, region2Demand, simulationHour, hubReorderPoint);
         if (newStockout) firstStockoutThisTick = true;
         simulationStateRef.current["kamloops"] = next;
         if (!simulationStatsRef.current["kamloops"]) simulationStatsRef.current["kamloops"] = createEmptyStats();
@@ -227,7 +237,7 @@ export function useSimulation() {
     } else {
       if (simulationHourRef.current === 0) {
         initSim(activeScenario, centralSafetyStockPercentage);
-        setLocations(getScenarioLocations(activeScenario, centralSafetyStockPercentage));
+        setLocations(getScenarioLocations(activeScenario, centralSafetyStockPercentage, hubSafetyStockPercentage));
         setDistributionCenterInventory(distributionCenterInventoryRef.current);
       }
       setIsPlaying(true);
@@ -237,6 +247,7 @@ export function useSimulation() {
   return {
     activeScenario,
     centralSafetyStockPercentage,
+    hubSafetyStockPercentage,
     locations,
     isPlaying,
     showResults,
@@ -249,6 +260,7 @@ export function useSimulation() {
     handlePlayPause,
     handleScenarioChange,
     handleCentralPctChange,
+    handleHubSafetyStockChange,
     resetAll,
     simulationStatsRef,
     distributionCenterInitialRef,
