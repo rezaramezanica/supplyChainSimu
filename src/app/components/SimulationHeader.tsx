@@ -1,7 +1,7 @@
 import truLogo from "../../assets/tru_logo.png";
 import { RotateCcw, Play, Pause } from "lucide-react";
 import type { ScenarioId } from "../simulation/types";
-import { SIM_TOTAL_HOURS } from "../simulation/constants";
+
 
 const SCENARIO_INFO = {
   1: ["Scenario 1", "Decentralized"],
@@ -11,7 +11,6 @@ const SCENARIO_INFO = {
 
 export function SimulationHeader({
   activeScenario,
-  currentHour,
   isPlaying,
   speedMilliseconds,
   centralSafetyStockPercentage,
@@ -24,7 +23,6 @@ export function SimulationHeader({
   onHubSafetyStockChange,
 }: {
   activeScenario: ScenarioId;
-  currentHour: number;
   isPlaying: boolean;
   speedMilliseconds: number;
   centralSafetyStockPercentage: number;
@@ -38,7 +36,6 @@ export function SimulationHeader({
 }) {
   const isScenario2 = activeScenario === 2;
   const isScenario3 = activeScenario === 3;
-  const hourOfDay   = currentHour % 8;
 
   return (
     <header className="absolute top-0 left-0 right-0 z-20 h-20 flex items-center justify-between px-5 bg-white border-b border-slate-200 shadow-sm gap-3 relative">
@@ -67,17 +64,6 @@ export function SimulationHeader({
 
       {/* Right: controls */}
       <div className="flex items-center gap-2 shrink-0">
-        {/* Hour/Day counter */}
-        {currentHour > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-500 shrink-0">
-            <span className="font-semibold text-slate-700">Day {Math.floor(currentHour / 8) + 1}</span>
-            <span className="text-slate-300">·</span>
-            <span>Hr {hourOfDay + 1}</span>
-            <span className="text-slate-300 mx-0.5">|</span>
-            <span className="tabular-nums">{currentHour}/{SIM_TOTAL_HOURS}</span>
-          </div>
-        )}
-
         {/* S2: Hub safety-stock slider */}
         {isScenario2 && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 shrink-0">

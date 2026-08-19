@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
 import { useSimulation } from "../hooks/useSimulation";
-import { WORLD_GEO, CANADA_GEO, US_GEO, COUNTRY_LABELS } from "../simulation/constants";
+import { WORLD_GEO, CANADA_GEO, US_GEO, COUNTRY_LABELS, SIM_TOTAL_HOURS } from "../simulation/constants";
 import { SimulationHeader } from "./SimulationHeader";
 import { Scenario1Overlay } from "./Scenario1Overlay";
 import { Scenario2Overlay } from "./Scenario2Overlay";
@@ -48,7 +48,6 @@ export function BCMap() {
 
       <SimulationHeader
         activeScenario={activeScenario}
-        currentHour={currentHour}
         isPlaying={isPlaying}
         speedMilliseconds={speedMilliseconds}
         centralSafetyStockPercentage={centralSafetyStockPercentage}
@@ -141,6 +140,17 @@ export function BCMap() {
           </ZoomableGroup>
         </ComposableMap>
       </div>
+
+      {/* Hour/Day counter */}
+      {currentHour > 0 && (
+        <div className="absolute top-24 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 backdrop-blur-sm border border-slate-200 text-xs text-slate-500 shadow-sm">
+          <span className="font-semibold text-slate-700">Day {Math.floor(currentHour / 8) + 1}</span>
+          <span className="text-slate-300">·</span>
+          <span>Hr {(currentHour % 8) + 1}</span>
+          <span className="text-slate-300 mx-0.5">|</span>
+          <span className="tabular-nums">{currentHour}/{SIM_TOTAL_HOURS}</span>
+        </div>
+      )}
 
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} onResetView={resetView} />
 
