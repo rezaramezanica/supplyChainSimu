@@ -209,11 +209,6 @@ export function useSimulation() {
         clearInterval(intervalRef.current!);
         intervalRef.current = null;
         setIsPlaying(false);
-        const captured = { ...simulationStatsRef.current };
-        if (Object.values(captured).some((s) => s.demands.length > 0)) {
-          setResultsData(captured);
-          setShowResults(true);
-        }
         return;
       }
     }, speedMilliseconds);
