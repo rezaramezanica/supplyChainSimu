@@ -35,19 +35,6 @@ export function createEmptyStats(): SimStats {
   };
 }
 
-// This function classifies an inventory level into one of three status categories based on how full 
-// the stock is relative to its maximum capacity.
-export function deriveItemStatus(qty: number, maxQty: number): "healthy" | "low" | "critical" {
-  const proportion = qty / maxQty;
-  if (proportion <= 0.1) return "critical";
-  if (proportion <= 0.3) return "low";
-  return "healthy";
-}
-
-export function getCurrentTimeString() {
-  return new Date().toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" });
-}
-
 // Scenario 1: independent facilities
 export function stepIndependent(
   locationState: LocSimState, demand: number, hour: number,
