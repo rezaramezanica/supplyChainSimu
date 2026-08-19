@@ -155,6 +155,10 @@ export function useSimulation() {
         const { safetyStockPerRegion, reorderPointPerRegion } = getScenario3Parameters(centralPercentage);
         const region1State       = simulationStateRef.current["kamloops"] ?? createInitialLocationState();
         const region2State       = simulationStateRef.current["kelowna"]  ?? createInitialLocationState();
+        // Replenish DC every 2 days (16 hours)
+        if (simulationHour > 0 && simulationHour % 16 === 0) {
+          distributionCenterInventoryRef.current = distributionCenterInitialRef.current;
+        }
         const currentDCInventory = distributionCenterInventoryRef.current;
 
         const result = stepScenario3(region1State, region2State, currentDCInventory, region1Demand, region2Demand, simulationHour, safetyStockPerRegion, safetyStockPerRegion);
