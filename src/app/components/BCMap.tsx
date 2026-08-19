@@ -36,7 +36,7 @@ export function BCMap() {
     distributionCenterInitialRef,
   } = useSimulation();
 
-  const isPooled    = activeScenario === 2;
+  const isScenario2    = activeScenario === 2;
   const isScenario3 = activeScenario === 3;
 
   const zoomIn    = () => setZoom((z) => Math.min(z * 1.5, 12));
@@ -110,7 +110,7 @@ export function BCMap() {
             ))}
 
             {/* Scenario overlays */}
-            {isPooled && (
+            {isScenario2 && (
               <Scenario2Overlay
                 locations={locations}
                 hovered={hovered}
@@ -128,7 +128,7 @@ export function BCMap() {
                 onHover={setHovered}
               />
             )}
-            {!isPooled && !isScenario3 && (
+            {!isScenario2 && !isScenario3 && (
               <Scenario1Overlay
                 locations={locations}
                 hovered={hovered}
@@ -158,7 +158,7 @@ export function BCMap() {
         <ResultsModal
           locations={locations}
           results={resultsData}
-          isPooled={isPooled}
+          isScenario2={isScenario2}
           isScenario3={isScenario3}
           distributionCenterInitialInventory={distributionCenterInitialRef.current}
           onClose={() => setShowResults(false)}

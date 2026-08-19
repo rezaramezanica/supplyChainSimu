@@ -114,11 +114,11 @@ function LocationResult({
 }
 
 export function ResultsModal({
-  locations, results, isPooled, isScenario3, distributionCenterInitialInventory, onClose,
+  locations, results, isScenario2, isScenario3, distributionCenterInitialInventory, onClose,
 }: {
   locations: LocationData[];
   results: Record<string, SimStats>;
-  isPooled: boolean;
+  isScenario2: boolean;
   isScenario3: boolean;
   distributionCenterInitialInventory: number;
   onClose: () => void;
@@ -138,7 +138,7 @@ export function ResultsModal({
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-8">
           {/* S2: single Central Hub entry */}
-          {isPooled && (
+          {isScenario2 && (
             <LocationResult
               gradientId="grad-hub"
               name="Central Hub Warehouse"
@@ -174,7 +174,7 @@ export function ResultsModal({
           })()}
 
           {/* S1 & S3: per-location entries */}
-          {!isPooled && locations.map((loc, i) => {
+          {!isScenario2 && locations.map((loc, i) => {
             const stats = results[loc.id] ?? createEmptyStats();
             return (
               <LocationResult
