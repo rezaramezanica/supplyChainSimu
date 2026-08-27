@@ -39,9 +39,13 @@ export function SimulationHeader({
 
   return (
     <header className="absolute top-0 left-0 right-0 z-20 h-20 flex items-center justify-between px-5 bg-white border-b border-slate-200 shadow-sm gap-3 relative">
-      {/* Left: logo */}
-      <div className="flex items-center shrink-0">
+      {/* Left: logo + professor name */}
+      <div className="flex items-center gap-2 shrink-0">
         <img src={truLogo} alt="TRU Logo" className="h-[72px] w-auto shrink-0" />
+        <div className="flex flex-col">
+          <span className="text-xs font-semibold text-slate-700">Prof. Mohsin Jat & Shamik Pushkar</span>
+          <span className="text-[10px] text-slate-400">Supply Chain Simulation</span>
+        </div>
       </div>
 
       {/* Center: scenario tabs — absolutely centered */}
