@@ -165,8 +165,8 @@ export function ResultsModal({
                 </div>
                 <div className="grid grid-cols-4 gap-3">
                   <StatCard label="DC Safety Stock" value={`${distributionCenterInitialInventory} units`} sub="initial allocation" info />
-                  <StatCard label="Served R1 from DC" value={`${r1.demandServedFromDC.toLocaleString()} units`} sub="Kamloops overflow" info />
-                  <StatCard label="Served R2 from DC" value={`${r2.demandServedFromDC.toLocaleString()} units`} sub="Kelowna overflow" info />
+                  <StatCard label="Served Kamloops from DC" value={`${r1.demandServedFromDC.toLocaleString()} units`} sub="Kamloops overflow" info />
+                  <StatCard label="Served Kelowna from DC" value={`${r2.demandServedFromDC.toLocaleString()} units`} sub="Kelowna overflow" info />
                   <StatCard label="Total from DC" value={`${totalDsfdc.toLocaleString()} units`} sub="combined DC draws" info />
                 </div>
               </div>
