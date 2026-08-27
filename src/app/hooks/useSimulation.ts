@@ -36,6 +36,7 @@ export function useSimulation() {
   const hubSafetyStockPercentageRef         = useRef(100);
   const distributionCenterInitialRef = useRef(0);
   const demandArraysRef              = useRef({ r1: [] as number[], r2: [] as number[] });
+  const distributionCenterConsumptionHistoryRef = useRef<number[]>([]);
   const firstStockoutPausedRef       = useRef(false);
 
   const initSim = (scenario: ScenarioId, pct: number) => {
@@ -71,6 +72,7 @@ export function useSimulation() {
     }
     simulationStatsRef.current = {};
     simulationHourRef.current  = 0;
+    distributionCenterConsumptionHistoryRef.current = [];
     firstStockoutPausedRef.current = false;
   };
 
@@ -155,9 +157,10 @@ export function useSimulation() {
         const { safetyStockPerRegion, reorderPointPerRegion } = getScenario3Parameters(centralPercentage);
         const region1State       = simulationStateRef.current["kamloops"] ?? createInitialLocationState();
         const region2State       = simulationStateRef.current["kelowna"]  ?? createInitialLocationState();
-        // Replenish DC every 2 days (16 hours)
-        if (simulationHour > 0 && simulationHour % 16 === 0) {
-          distributionCenterInventoryRef.current = distributionCenterInitialRef.current;
+        // Replenish DC: add back the amount consumed 16 hours ago
+        if (simulationHour >= 16) {
+          const consumedThen = distributionCenterConsumptionHistoryRef.current[simulationHour - 16] ?? 0;
+          distributionCenterInventoryRef.current += consumedThen;
         }
         const currentDCInventory = distributionCenterInventoryRef.current;
 
@@ -166,6 +169,7 @@ export function useSimulation() {
         simulationStateRef.current["kamloops"]  = result.nextRegion1State;
         simulationStateRef.current["kelowna"]   = result.nextRegion2State;
         distributionCenterInventoryRef.current  = result.nextDistributionCenterInventory;
+        distributionCenterConsumptionHistoryRef.current[simulationHour] = result.demandServedFromDC1Delta + result.demandServedFromDC2Delta;
 
         for (const [id, nextState, demand, demandFromDCDelta] of [
           ["kamloops", result.nextRegion1State, region1Demand, result.demandServedFromDC1Delta],
