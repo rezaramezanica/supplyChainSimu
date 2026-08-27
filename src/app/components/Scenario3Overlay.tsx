@@ -57,7 +57,7 @@ export function Scenario3Overlay({
             strokeOpacity={distributionCenterInventory <= 0 ? 0.9 : 0.5} />
           <rect width={4} height={distributionCenterCardHeight} rx={2} fill={distributionCenterInventory <= 0 ? "#ef4444" : "#7c3aed"} />
           <text x={14} y={16} fontSize={7.5} fontWeight="700" fill="#94a3b8" letterSpacing="0.08em" fontFamily="system-ui, sans-serif">DISTRIBUTION CENTRE</text>
-          <text x={14} y={31} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">Safety Stock Reserve</text>
+          <text x={14} y={31} fontSize={8.5} fill="#64748b" fontFamily="system-ui, sans-serif">SS Reserve</text>
           <text x={distributionCenterCardWidth - 10} y={31} textAnchor="end" fontSize={9} fontWeight="700" fill={distributionCenterStatusColor} fontFamily="system-ui, sans-serif">
             {distributionCenterInventory.toLocaleString()} / {distributionCenterInitialInventory} units
           </text>
