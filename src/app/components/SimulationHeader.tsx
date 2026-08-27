@@ -100,9 +100,9 @@ export function SimulationHeader({
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 shrink-0">
           <span className="text-[10px] text-slate-400 font-semibold uppercase">Speed</span>
           <input
-            type="range" min={50} max={2000} step={50} value={speedMilliseconds}
-            onChange={(e) => onSpeedChange(Number(e.target.value))}
-            className="w-20 h-1.5 accent-slate-700" style={{ direction: "rtl" }}
+            type="range" min={50} max={2000} step={50} value={2050 - speedMilliseconds}
+            onChange={(e) => onSpeedChange(2050 - Number(e.target.value))}
+            className="w-20 h-1.5 accent-slate-700"
             title={`${speedMilliseconds}ms per hour`}
           />
           <span className="text-[10px] text-slate-500 w-8 text-left">
