@@ -26,7 +26,7 @@ export function Scenario2Overlay({
       <Line from={locations[0].coordinates} to={CENTRAL_HUB_COORDS} stroke="#0d9488" strokeWidth={2} strokeDasharray="6 3" strokeLinecap="round" />
       <Line from={locations[1].coordinates} to={CENTRAL_HUB_COORDS} stroke="#0d9488" strokeWidth={2} strokeDasharray="6 3" strokeLinecap="round" />
 
-      {/* Central hub marker */}
+      {/* Central hub marker - Kamloops serves a dual role — it's both the city pin on the map AND the central hub. */}
       <Marker coordinates={CENTRAL_HUB_COORDS} style={{ cursor: "default" }}>
         <line x1={0} y1={-pinRadius} x2={0} y2={cardTop + H}
           stroke="#0d9488" strokeWidth={1.5} strokeOpacity={0.4} strokeDasharray="3 2"
@@ -49,20 +49,20 @@ export function Scenario2Overlay({
       </Marker>
 
       {/* City pins (no inventory cards in S2 — service areas only) */}
-      {locations.map((loc) => {
-        const active    = hovered === loc.id;
+      {locations.map((location) => {
+        const active    = hovered === location.id;
         const cityPinR  = active ? 18 : 13;
         return (
-          <Marker key={loc.id} coordinates={loc.coordinates}
-            onMouseEnter={() => onHover(loc.id)} onMouseLeave={() => onHover(null)}
+          <Marker key={location.id} coordinates={location.coordinates}
+            onMouseEnter={() => onHover(location.id)} onMouseLeave={() => onHover(null)}
             style={{ cursor: "default" }}>
-            {active && <circle r={30} fill={loc.color} fillOpacity={0.08} stroke={loc.color} strokeWidth={1} strokeOpacity={0.25} />}
-            <circle r={cityPinR} fill={loc.color} fillOpacity={0.15} transform="translate(1,1)" />
-            <circle r={cityPinR} fill="white" stroke={loc.color} strokeWidth={2.5} />
-            <circle r={5} fill={loc.color} />
-            <text textAnchor="middle" y={active ? 34 : 28} fill={loc.color} fontSize={11} fontWeight="700"
+            {active && <circle r={30} fill={location.color} fillOpacity={0.08} stroke={location.color} strokeWidth={1} strokeOpacity={0.25} />}
+            <circle r={cityPinR} fill={location.color} fillOpacity={0.15} transform="translate(1,1)" />
+            <circle r={cityPinR} fill="white" stroke={location.color} strokeWidth={2.5} />
+            <circle r={5} fill={location.color} />
+            <text textAnchor="middle" y={active ? 34 : 28} fill={location.color} fontSize={11} fontWeight="700"
               fontFamily="system-ui, sans-serif" style={{ pointerEvents: "none", userSelect: "none" }}>
-              {loc.name}
+              {location.name}
             </text>
           </Marker>
         );

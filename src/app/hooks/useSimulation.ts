@@ -33,7 +33,7 @@ export function useSimulation() {
   const distributionCenterInventoryRef = useRef(0);
   const activeScenarioRef            = useRef<ScenarioId>(1);
   const centralPercentageRef         = useRef(50);
-  const hubSafetyStockPctRef         = useRef(100);
+  const hubSafetyStockPercentageRef         = useRef(100);
   const distributionCenterInitialRef = useRef(0);
   const demandArraysRef              = useRef({ r1: [] as number[], r2: [] as number[] });
   const firstStockoutPausedRef       = useRef(false);
@@ -49,7 +49,7 @@ export function useSimulation() {
     }
     const { safetyStockDistributionCenter, initialInventoryPerRegion } = getScenario3Parameters(pct);
     if (scenario === 2) {
-      const { hubInitialInventory } = getScenario2Parameters(hubSafetyStockPctRef.current);
+      const { hubInitialInventory } = getScenario2Parameters(hubSafetyStockPercentageRef.current);
       simulationStateRef.current = {
         kamloops: createInitialLocationState(hubInitialInventory),
         kelowna:  createInitialLocationState(),
@@ -80,7 +80,7 @@ export function useSimulation() {
     setIsPlaying(false);
     setCurrentHour(0);
     setDistributionCenterInventory(distributionCenterInventoryRef.current);
-    setLocations(getScenarioLocations(scenario, pct, hubSafetyStockPctRef.current));
+    setLocations(getScenarioLocations(scenario, pct, hubSafetyStockPercentageRef.current));
   };
 
   const handleScenarioChange = (scenario: ScenarioId) => {
@@ -96,7 +96,7 @@ export function useSimulation() {
   };
 
   const handleHubSafetyStockChange = (pct: number) => {
-    hubSafetyStockPctRef.current = pct;
+    hubSafetyStockPercentageRef.current = pct;
     setHubSafetyStockPercentage(pct);
     resetAll(2);
   };
@@ -131,7 +131,7 @@ export function useSimulation() {
 
       // ── Scenario 2: pooled ───────────────────────────────────────────────
       if (scenario === 2) {
-        const { hubReorderPoint, hubInitialInventory } = getScenario2Parameters(hubSafetyStockPctRef.current);
+        const { hubReorderPoint, hubInitialInventory } = getScenario2Parameters(hubSafetyStockPercentageRef.current);
         const hub = simulationStateRef.current["kamloops"] ?? createInitialLocationState(hubInitialInventory);
         const { next, newStockout } = stepPooled(hub, region1Demand, region2Demand, simulationHour, hubReorderPoint);
         if (newStockout) firstStockoutThisTick = true;
