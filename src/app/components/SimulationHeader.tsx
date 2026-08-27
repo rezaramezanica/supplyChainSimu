@@ -14,7 +14,7 @@ export function SimulationHeader({
   isPlaying,
   speedMilliseconds,
   centralSafetyStockPercentage,
-  hubSafetyStockPercentage,
+  hubExtraSafetyStock,
   onScenarioChange,
   onPlayPause,
   onReset,
@@ -26,13 +26,13 @@ export function SimulationHeader({
   isPlaying: boolean;
   speedMilliseconds: number;
   centralSafetyStockPercentage: number;
-  hubSafetyStockPercentage: number;
+  hubExtraSafetyStock: number;
   onScenarioChange: (s: ScenarioId) => void;
   onPlayPause: () => void;
   onReset: () => void;
   onSpeedChange: (ms: number) => void;
   onCentralPctChange: (pct: number) => void;
-  onHubSafetyStockChange: (pct: number) => void;
+  onHubSafetyStockChange: (units: number) => void;
 }) {
   const isScenario2 = activeScenario === 2;
   const isScenario3 = activeScenario === 3;
@@ -67,14 +67,18 @@ export function SimulationHeader({
         {/* S2: Hub safety-stock slider */}
         {isScenario2 && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 shrink-0">
-            <span className="text-[10px] text-teal-500 font-semibold uppercase">Hub SS%</span>
+            <span className="text-[10px] text-teal-500 font-semibold uppercase">Extra SS</span>
             <input
-              type="range" min={0} max={200} step={25} value={hubSafetyStockPercentage}
+              type="range" min={0} max={3000} step={1} value={hubExtraSafetyStock}
               onChange={(e) => onHubSafetyStockChange(Number(e.target.value))}
-              className="w-20 h-1.5 accent-teal-600"
-              title={`${hubSafetyStockPercentage}% of default hub safety stock`}
+              className="w-32 h-1.5 accent-teal-600"
+              title={`Extra safety stock units added to hub (0 = default)`}
             />
-            <span className="text-[10px] text-teal-700 font-bold w-10 text-left">{hubSafetyStockPercentage}%</span>
+            <input
+              type="number" min={0} max={3000} step={1} value={hubExtraSafetyStock}
+              onChange={(e) => onHubSafetyStockChange(Math.max(0, Math.min(3000, Number(e.target.value) || 0)))}
+              className="w-14 h-5 text-[10px] text-teal-700 font-bold text-center rounded border border-teal-300 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
           </div>
         )}
 
