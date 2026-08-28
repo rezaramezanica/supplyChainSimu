@@ -236,11 +236,6 @@ export function useSimulation() {
 
   const handlePlayPause = () => {
     if (isPlaying) {
-      const captured = { ...simulationStatsRef.current };
-      if (Object.values(captured).some((locationStats) => locationStats.demands.length > 0)) {
-        setResultsData(captured);
-        setShowResults(true);
-      }
       setIsPlaying(false);
     } else {
       if (simulationHourRef.current === 0) {
