@@ -3,7 +3,7 @@ import type { ScenarioId, LocationData, LocSimState, SimStats } from "../simulat
 import {
   SIM_TOTAL_HOURS, SIM_DEMAND_MEAN, SIM_DEMAND_STD_DEV,
   SIM_INVENTORY_CAPACITY, SIM_REORDER_POINT, SIM_LEAD_TIME,
-  SIM_USE_FIXED_DEMANDS,
+  SIM_USE_FIXED_DEMANDS, SIM_SAFETY_STOCK,
 } from "../simulation/constants";
 import {
   createInitialLocationState, createEmptyStats, normalRandom,
@@ -17,7 +17,7 @@ import {
 export function useSimulation() {
   const [activeScenario, setActiveScenario]                       = useState<ScenarioId>(1);
   const [centralSafetyStockPercentage, setCentralSafetyStockPercentage] = useState(50);
-  const [hubExtraSafetyStock, setHubExtraSafetyStock]             = useState(0);
+  const [hubSafetyStock, setHubSafetyStock]                       = useState(2 * SIM_SAFETY_STOCK);
   const [locations, setLocations]                                 = useState<LocationData[]>(getScenarioLocations(1));
   const [isPlaying, setIsPlaying]                                 = useState(false);
   const [showResults, setShowResults]                             = useState(false);
@@ -33,7 +33,7 @@ export function useSimulation() {
   const distributionCenterInventoryRef = useRef(0);
   const activeScenarioRef            = useRef<ScenarioId>(1);
   const centralPercentageRef         = useRef(50);
-  const hubExtraSafetyStockRef         = useRef(0);
+  const hubSafetyStockRef              = useRef(2 * SIM_SAFETY_STOCK);
   const distributionCenterInitialRef = useRef(0);
   const demandArraysRef              = useRef({ r1: [] as number[], r2: [] as number[] });
   const distributionCenterConsumptionHistoryRef = useRef<number[]>([]);
@@ -50,7 +50,7 @@ export function useSimulation() {
     }
     const { safetyStockDistributionCenter, initialInventoryPerRegion } = getScenario3Parameters(pct);
     if (scenario === 2) {
-      const { hubInitialInventory } = getScenario2Parameters(hubExtraSafetyStockRef.current);
+      const { hubInitialInventory } = getScenario2Parameters(hubSafetyStockRef.current);
       simulationStateRef.current = {
         kamloops: createInitialLocationState(hubInitialInventory),
         kelowna:  createInitialLocationState(),
@@ -82,7 +82,7 @@ export function useSimulation() {
     setIsPlaying(false);
     setCurrentHour(0);
     setDistributionCenterInventory(distributionCenterInventoryRef.current);
-    setLocations(getScenarioLocations(scenario, pct, hubExtraSafetyStockRef.current));
+    setLocations(getScenarioLocations(scenario, pct, hubSafetyStockRef.current));
   };
 
   const handleScenarioChange = (scenario: ScenarioId) => {
@@ -97,9 +97,9 @@ export function useSimulation() {
     resetAll(3, pct);
   };
 
-  const handleHubSafetyStockChange = (pct: number) => {
-    hubExtraSafetyStockRef.current = pct;
-    setHubExtraSafetyStock(pct);
+  const handleHubSafetyStockChange = (value: number) => {
+    hubSafetyStockRef.current = value;
+    setHubSafetyStock(value);
     resetAll(2);
   };
 
@@ -133,7 +133,7 @@ export function useSimulation() {
 
       // ── Scenario 2: pooled ───────────────────────────────────────────────
       if (scenario === 2) {
-        const { hubReorderPoint, hubInitialInventory } = getScenario2Parameters(hubExtraSafetyStockRef.current);
+        const { hubReorderPoint, hubInitialInventory } = getScenario2Parameters(hubSafetyStockRef.current);
         const hub = simulationStateRef.current["kamloops"] ?? createInitialLocationState(hubInitialInventory);
         const { next, newStockout } = stepPooled(hub, region1Demand, region2Demand, simulationHour, hubReorderPoint);
         if (newStockout) firstStockoutThisTick = true;
@@ -240,7 +240,7 @@ export function useSimulation() {
     } else {
       if (simulationHourRef.current === 0) {
         initSim(activeScenario, centralSafetyStockPercentage);
-        setLocations(getScenarioLocations(activeScenario, centralSafetyStockPercentage, hubExtraSafetyStock));
+        setLocations(getScenarioLocations(activeScenario, centralSafetyStockPercentage, hubSafetyStock));
         setDistributionCenterInventory(distributionCenterInventoryRef.current);
       }
       setIsPlaying(true);
@@ -250,7 +250,7 @@ export function useSimulation() {
   return {
     activeScenario,
     centralSafetyStockPercentage,
-    hubExtraSafetyStock,
+    hubSafetyStock,
     locations,
     isPlaying,
     showResults,

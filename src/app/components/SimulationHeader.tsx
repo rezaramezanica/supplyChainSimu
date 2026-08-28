@@ -1,6 +1,7 @@
 import truLogo from "../../assets/tru_logo.png";
 import { RotateCcw, Play, Pause } from "lucide-react";
 import type { ScenarioId } from "../simulation/types";
+import { SIM_SAFETY_STOCK } from "../simulation/constants";
 
 
 const SCENARIO_INFO = {
@@ -14,7 +15,7 @@ export function SimulationHeader({
   isPlaying,
   speedMilliseconds,
   centralSafetyStockPercentage,
-  hubExtraSafetyStock,
+  hubSafetyStock,
   onScenarioChange,
   onPlayPause,
   onReset,
@@ -26,7 +27,7 @@ export function SimulationHeader({
   isPlaying: boolean;
   speedMilliseconds: number;
   centralSafetyStockPercentage: number;
-  hubExtraSafetyStock: number;
+  hubSafetyStock: number;
   onScenarioChange: (s: ScenarioId) => void;
   onPlayPause: () => void;
   onReset: () => void;
@@ -43,8 +44,9 @@ export function SimulationHeader({
       <div className="flex items-center gap-2 shrink-0">
         <img src={truLogo} alt="TRU Logo" className="h-[72px] w-auto shrink-0" />
         <div className="flex flex-col">
-          <span className="text-xs font-semibold text-slate-700">Prof. Mohsin Jat & Shamik Pushkar</span>
-          <span className="text-[10px] text-slate-400">Supply Chain Simulation</span>
+          <span className="text-xs font-semibold text-slate-700">Prof. Mohsin Jat</span>
+          <span className="text-xs font-semibold text-slate-700">Prof. Shamik Pushkar</span>
+          <span className="text-xs font-semibold text-slate-500">Reza Ramezani</span>
         </div>
       </div>
 
@@ -71,16 +73,16 @@ export function SimulationHeader({
         {/* S2: Hub safety-stock slider */}
         {isScenario2 && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 shrink-0">
-            <span className="text-[10px] text-teal-500 font-semibold uppercase">Extra SS</span>
+            <span className="text-[10px] text-teal-500 font-semibold uppercase">Safety Stock</span>
             <input
-              type="range" min={0} max={3000} step={1} value={hubExtraSafetyStock}
+              type="range" min={0} max={2 * SIM_SAFETY_STOCK} step={1} value={hubSafetyStock}
               onChange={(e) => onHubSafetyStockChange(Number(e.target.value))}
               className="w-32 h-1.5 accent-teal-600"
-              title={`Extra safety stock units added to hub (0 = default)`}
+              title={`Hub safety stock (default: ${2 * SIM_SAFETY_STOCK})`}
             />
             <input
-              type="number" min={0} max={3000} step={1} value={hubExtraSafetyStock}
-              onChange={(e) => onHubSafetyStockChange(Math.max(0, Math.min(3000, Number(e.target.value) || 0)))}
+              type="number" min={0} max={2 * SIM_SAFETY_STOCK} step={1} value={hubSafetyStock}
+              onChange={(e) => onHubSafetyStockChange(Math.max(0, Math.min(2 * SIM_SAFETY_STOCK, Number(e.target.value) || 0)))}
               className="w-14 h-5 text-[10px] text-teal-700 font-bold text-center rounded border border-teal-300 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
           </div>
