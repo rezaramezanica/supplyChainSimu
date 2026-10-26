@@ -1,12 +1,12 @@
 import { jStat } from "jstat";
 
-export const SIM_ORDER_QUANTITY = 17000;
+export const SIM_ORDER_QUANTITY = 20000;
 export const SIM_LEAD_TIME     = 16;      // hours
 export const SIM_DEMAND_MEAN   = 500;     // average hourly demand per region
 export const SIM_DEMAND_STD_DEV = 150;     // std deviation of hourly demand
 export const SIM_TOTAL_HOURS   = 2920;    // 365 days × 8 hours/day
 export const SIM_ALPHA         = 0.9;    // desired service level (single-tail)
-export const SIM_USE_FIXED_DEMANDS = false; // true = reproducible (JSON), false = random each run
+export const SIM_USE_FIXED_DEMANDS = true; // true = reproducible (JSON), false = random each run
 
 export const SIM_Z = jStat.normal.inv(SIM_ALPHA, 0, 1); // Z-score from α (single-tail inverse normal)
 export const SIM_SAFETY_STOCK = Math.max(0, Math.round(SIM_Z * SIM_DEMAND_STD_DEV * Math.sqrt(SIM_LEAD_TIME))); 
