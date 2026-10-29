@@ -1,5 +1,5 @@
 import truLogo from "../../assets/tru_logo.png";
-import { RotateCcw, Play, Pause } from "lucide-react";
+import { RotateCcw, Play, Pause, Dices } from "lucide-react";
 import type { ScenarioId } from "../simulation/types";
 import { SIM_SAFETY_STOCK } from "../simulation/constants";
 
@@ -18,6 +18,8 @@ export function SimulationHeader({
   hubSafetyStock,
   onScenarioChange,
   onPlayPause,
+  onBatchRun,
+  isBatchRunning,
   onReset,
   onSpeedChange,
   onCentralPctChange,
@@ -30,6 +32,8 @@ export function SimulationHeader({
   hubSafetyStock: number;
   onScenarioChange: (s: ScenarioId) => void;
   onPlayPause: () => void;
+  onBatchRun: () => void;
+  isBatchRunning: boolean;
   onReset: () => void;
   onSpeedChange: (ms: number) => void;
   onCentralPctChange: (pct: number) => void;
@@ -77,7 +81,7 @@ export function SimulationHeader({
             <input
               type="range" min={0} max={2 * SIM_SAFETY_STOCK} step={1} value={hubSafetyStock}
               onChange={(e) => onHubSafetyStockChange(Number(e.target.value))}
-              className="w-32 h-1.5 accent-teal-600"
+              className="w-20 h-1.5 accent-teal-600"
               title={`Hub safety stock (default: ${2 * SIM_SAFETY_STOCK})`}
             />
             <input
@@ -115,6 +119,15 @@ export function SimulationHeader({
             {speedMilliseconds <= 100 ? "Fast" : speedMilliseconds >= 1500 ? "Slow" : `${speedMilliseconds}`}
           </span>
         </div>
+
+        {/* Batch Run */}
+        <button onClick={onBatchRun} disabled={isBatchRunning || isPlaying}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500 bg-blue-50 text-blue-600 text-xs font-semibold transition-all hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Run 100 simulations with random demands"
+        >
+          <Dices className="w-3.5 h-3.5" />
+          {isBatchRunning ? "Running…" : "Batch Run"}
+        </button>
 
         {/* Play/Pause */}
         <button onClick={onPlayPause}

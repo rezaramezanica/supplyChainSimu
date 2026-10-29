@@ -10,6 +10,7 @@ import {
   stepIndependent, stepPooled, stepScenario3,
 } from "../simulation/stepFunctions";
 import fixedDemands from "../simulation/fixedDemands.json";
+import { runBatchSimulation, type BatchResult } from "../simulation/batchSimulation";
 import {
   getScenario2Parameters, getScenario3Parameters, getScenarioLocations,
 } from "../simulation/locationData";
@@ -25,6 +26,9 @@ export function useSimulation() {
   const [currentHour, setCurrentHour]                             = useState(0);
   const [speedMilliseconds, setSpeedMilliseconds]                 = useState(200);
   const [distributionCenterInventory, setDistributionCenterInventory] = useState(0);
+  const [isBatchRunning, setIsBatchRunning]   = useState(false);
+  const [showBatchResults, setShowBatchResults] = useState(false);
+  const [batchResult, setBatchResult]           = useState<BatchResult | null>(null);
 
   const intervalRef                  = useRef<ReturnType<typeof setInterval> | null>(null);
   const simulationHourRef            = useRef(0);
@@ -234,6 +238,21 @@ export function useSimulation() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isPlaying, speedMilliseconds]);
 
+  const handleBatchRun = () => {
+    if (isBatchRunning || isPlaying) return;
+    setIsBatchRunning(true);
+    // Use setTimeout to let the UI update with "Running…" before blocking
+    setTimeout(() => {
+      const result = runBatchSimulation(activeScenario, centralSafetyStockPercentage, hubSafetyStock, 100);
+      setBatchResult(result);
+      // Keep "Running…" visible for at least 2 seconds total
+      setTimeout(() => {
+        setIsBatchRunning(false);
+        setShowBatchResults(true);
+      }, 2000);
+    }, 50);
+  };
+
   const handlePlayPause = () => {
     if (isPlaying) {
       setIsPlaying(false);
@@ -267,5 +286,10 @@ export function useSimulation() {
     resetAll,
     simulationStatsRef,
     distributionCenterInitialRef,
+    handleBatchRun,
+    isBatchRunning,
+    showBatchResults,
+    setShowBatchResults,
+    batchResult,
   };
 }

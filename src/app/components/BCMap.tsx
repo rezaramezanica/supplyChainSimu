@@ -8,6 +8,7 @@ import { Scenario2Overlay } from "./Scenario2Overlay";
 import { Scenario3Overlay } from "./Scenario3Overlay";
 import { ZoomControls } from "./ZoomControls";
 import { ResultsModal } from "./ResultsModal";
+import { BatchResultsModal } from "./BatchResultsModal";
 
 export function BCMap() {
   const [hovered, setHovered]                     = useState<string | null>(null);
@@ -34,6 +35,11 @@ export function BCMap() {
     resetAll,
     simulationStatsRef,
     distributionCenterInitialRef,
+    handleBatchRun,
+    isBatchRunning,
+    showBatchResults,
+    setShowBatchResults,
+    batchResult,
   } = useSimulation();
 
   const isScenario2    = activeScenario === 2;
@@ -54,6 +60,8 @@ export function BCMap() {
         hubSafetyStock={hubSafetyStock}
         onScenarioChange={handleScenarioChange}
         onPlayPause={handlePlayPause}
+        onBatchRun={handleBatchRun}
+        isBatchRunning={isBatchRunning}
         onReset={() => resetAll(activeScenario)}
         onSpeedChange={setSpeedMilliseconds}
         onCentralPctChange={handleCentralPctChange}
@@ -162,6 +170,15 @@ export function BCMap() {
           isScenario3={isScenario3}
           distributionCenterInitialInventory={distributionCenterInitialRef.current}
           onClose={() => setShowResults(false)}
+        />
+      )}
+
+      {showBatchResults && batchResult && (
+        <BatchResultsModal
+          result={batchResult}
+          isScenario2={isScenario2}
+          isScenario3={isScenario3}
+          onClose={() => setShowBatchResults(false)}
         />
       )}
     </div>
