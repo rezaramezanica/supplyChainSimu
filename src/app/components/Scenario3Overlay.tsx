@@ -75,7 +75,7 @@ export function Scenario3Overlay({
       {locations.map((location) => {
         const active    = hovered === location.id;
         const stock     = location.stock;
-        const W = 168, H = 142;
+        const W = 205, H = 148;
         const pinRadius = active ? 18 : 13;
         const gap       = 14;
         const extraLeft = location.id === "kamloops" ? 40 : 0;

@@ -17,7 +17,7 @@ export function Scenario2Overlay({
   const hub        = locations[0];
   const hubStock   = hub.stock;
   const hasStockout = (simulationStats["kamloops"]?.stockoutInstances ?? 0) > 0;
-  const W = 168, H = 142, pinRadius = 13;
+  const W = 205, H = 148, pinRadius = 13;
   const cardTop = -(H + 80);
   const hubCapacity = SIM_INVENTORY_CAPACITY * 2;
 
