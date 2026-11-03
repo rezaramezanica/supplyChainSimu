@@ -14,9 +14,9 @@ export const SIM_REORDER_POINT = SIM_DEMAND_MEAN * SIM_LEAD_TIME + SIM_SAFETY_ST
 export const SIM_INITIAL_INVENTORY  = SIM_ORDER_QUANTITY + SIM_SAFETY_STOCK;
 export const SIM_INVENTORY_CAPACITY = SIM_INITIAL_INVENTORY;
 
-export const WORLD_GEO   = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
-export const CANADA_GEO  = "https://cdn.jsdelivr.net/gh/codeforamerica/click_that_hood@master/public/data/canada.geojson";
-export const US_GEO      = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
+export { default as WORLD_GEO }  from "../../assets/geo/countries-110m.json";
+export { default as CANADA_GEO } from "../../assets/geo/canada.json";
+export { default as US_GEO }     from "../../assets/geo/states-10m.json";
 
 export const COUNTRY_LABELS: { name: string; coords: [number, number] }[] = [
   { name: "CANADA",        coords: [-115.0, 58.0] },
