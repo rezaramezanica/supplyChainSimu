@@ -1,8 +1,19 @@
 import { defineConfig } from 'vite'
 import path from 'path'
+import fs from 'fs'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
+function versionJsonPlugin() {
+  return {
+    name: 'version-json',
+    writeBundle(options: { dir?: string }) {
+      const outDir = options.dir || 'dist'
+      const version = Date.now().toString()
+      fs.writeFileSync(path.resolve(outDir, 'version.json'), JSON.stringify({ v: version }))
+    },
+  }
+}
 
 function figmaAssetResolver() {
   return {
@@ -24,6 +35,7 @@ export default defineConfig({
     // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
+    versionJsonPlugin(),
   ],
   resolve: {
     alias: {
