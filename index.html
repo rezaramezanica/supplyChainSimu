@@ -12,6 +12,19 @@
       <meta name="description" content="Visualize global production capacity options with an interactive heat map, helping semiconductor companies like Kulicke &amp; Soffa make strategic location decisions." />
       <meta name="robots" content="noindex, nofollow" />
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
+      <script>
+        (function(){
+          var key = '__app_v';
+          fetch('./version.json?_=' + Date.now(), { cache: 'no-store' })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+              var prev = localStorage.getItem(key);
+              if (prev && prev !== d.v) { localStorage.setItem(key, d.v); location.reload(); }
+              else { localStorage.setItem(key, d.v); }
+            })
+            .catch(function(){});
+        })();
+      </script>
       
       <script type="module" crossorigin src="./assets/index-CGX4IKgM.js"></script>
       <link rel="stylesheet" crossorigin href="./assets/index-BDVte3RD.css">
