@@ -23,7 +23,7 @@ export function Scenario1Overlay({
       {locations.map((location) => {
         const active = hovered === location.id;
         const stock  = location.stock;
-        const W = 205, H = 148;
+        const W = 230, H = 148;
         const pinRadius = active ? 18 : 13;
         const gap       = 14;
         const cardX     = location.cardSide === "left" ? -(pinRadius + gap + W) : pinRadius + gap;
