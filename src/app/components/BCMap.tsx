@@ -117,6 +117,16 @@ export function BCMap() {
               </Marker>
             ))}
 
+            {/* Vancouver label */}
+            <Marker coordinates={[-123.1216, 49.2827]}>
+              <circle r={3 / zoom} fill="#64748b" fillOpacity={0.5} />
+              <text y={-6 / zoom} textAnchor="middle" fill="#475569"
+                fontSize={8 / zoom} fontFamily="system-ui, sans-serif"
+                fontWeight="600" style={{ pointerEvents: "none", userSelect: "none" }}>
+                Vancouver
+              </text>
+            </Marker>
+
             {/* Scenario overlays */}
             {isScenario2 && (
               <Scenario2Overlay
