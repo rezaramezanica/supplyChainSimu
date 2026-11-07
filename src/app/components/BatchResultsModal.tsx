@@ -45,8 +45,8 @@ function LocationBatchResult({ loc, isHub, isScenario3, subtitle, showDivider }:
               {loc.runs.map((run, i) => (
                 <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
                   <td className="px-2 py-1 text-slate-400 font-medium">{i + 1}</td>
-                  <td className="px-2 py-1 text-right font-semibold" style={{ color: style.color }}>{run.fillRate.toFixed(1)}%</td>
-                  <td className="px-2 py-1 text-right font-semibold" style={{ color: style.color }}>{run.serviceLevel.toFixed(1)}%</td>
+                  <td className="px-2 py-1 text-right font-semibold" style={{ color: style.color }}>{run.fillRate.toFixed(2)}%</td>
+                  <td className="px-2 py-1 text-right font-semibold" style={{ color: style.color }}>{run.serviceLevel.toFixed(2)}%</td>
                   <td className={`px-2 py-1 text-right font-semibold ${run.stockoutInstances > 0 ? "text-red-600" : "text-slate-700"}`}>{run.stockoutInstances}</td>
                   <td className={`px-2 py-1 text-right font-semibold ${run.demandLost > 0 ? "text-red-600" : "text-slate-700"}`}>{run.demandLost.toLocaleString()}</td>
                 </tr>
@@ -61,11 +61,11 @@ function LocationBatchResult({ loc, isHub, isScenario3, subtitle, showDivider }:
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: style.color }}>Avg Fill Rate</p>
-                <p className="text-2xl font-black mt-0.5" style={{ color: style.color }}>{avg.fillRate.toFixed(1)}%</p>
+                <p className="text-2xl font-black mt-0.5" style={{ color: style.color }}>{avg.fillRate.toFixed(2)}%</p>
               </div>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: style.color }}>Avg Service Level</p>
-                <p className="text-2xl font-black mt-0.5" style={{ color: style.color }}>{avg.serviceLevel.toFixed(1)}%</p>
+                <p className="text-2xl font-black mt-0.5" style={{ color: style.color }}>{avg.serviceLevel.toFixed(2)}%</p>
               </div>
             </div>
           </div>

@@ -88,12 +88,12 @@ function LocationResult({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color }}>Fill Rate</p>
-                <p className="text-2xl font-black mt-0.5" style={{ color }}>{fillRate.toFixed(1)}%</p>
+                <p className="text-2xl font-black mt-0.5" style={{ color }}>{fillRate.toFixed(2)}%</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">1 − Lost / Total</p>
               </div>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color }}>Service Level</p>
-                <p className="text-2xl font-black mt-0.5" style={{ color }}>{serviceLevel.toFixed(1)}%</p>
+                <p className="text-2xl font-black mt-0.5" style={{ color }}>{serviceLevel.toFixed(2)}%</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">1 − Stockouts / Orders</p>
               </div>
             </div>
